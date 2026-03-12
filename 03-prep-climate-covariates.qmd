@@ -1,0 +1,370 @@
+---
+title: "Prepare Climate Covariates for M4MD"
+format: html
+---
+
+*This Quarto doc takes in processed PRISM + CMIP6 LOCA2 data, and M4MD response variable and plot locations CSVs. It outputs a covariate CSV (precip and/or temp) suitable as covariate inputs to the [M4MD pipeline](https://lzachmann.github.io/models-for-missing-data/). It also outputs a CSV of future climate scenarios suitable for input to the M4MD forecasting pipeline.*
+
+**User steps**
+
+1.  Customize the `User Config` code block
+
+    -   The `response_csv` and `site_locations_csv` should be taken directly from a working M4MD pipeline model. For example, if you have a pipeline model where the response var is percent vegetation cover, you could provide that with the corresponding site locations
+    -   The column name vars should be based on the `response_csv` and `site_locations_csv` column names
+    -   `extract_ppt` and `extract_tmax` should reflect what subset of covariates you'd like. Currently, the forecasting pipeline only handles a single covariate (to be updated soon!)
+    -   `future_start` and `future_end` should reflect the range of years you'd like to forecast in the pipeline
+
+2.  Verify the visual boundary plot and site locations under the `Sanity Check — Site Locations` code block
+
+3.  If you'd like, examine the timeseries and covariance plots
+
+**Notes**
+
+-   Outputs are saved at `output_csv` + `forecast_output_csv` which you define in the `User Config` code block.
+
+## User Config
+
+```{r user-config}
+# ── Park identifier (CUSTOMIZE) ───────────────────────────────────────────────
+park_code <- "CANY"
+
+# ── Input paths (CUSTOMIZE) ───────────────────────────────────────────────────
+response_csv <- "/Users/max/Documents/SP26/M4MD/assets/_data/cany-ricegrass-cover.csv"
+site_locations_csv <- "/Users/max/Documents/SP26/M4MD/assets/_data/cany-plot-locs.csv"
+
+# ── Column names (CUSTOMIZE) ──────────────────────────────────────────────────
+# these should match the column names used in the response csv
+unit_code_col <- "Unit_Code"
+response_var_col <- "y_species"
+site_id_col <- "Plot_ID"
+stratum_col <- "Master_Stratification"
+year_col <- "Visit_Year"
+# these should match the column names used in the locations csv
+xcoord_col <- "x_coord" # easting / longitude column
+ycoord_col <- "y_coord" # northing / latitude column
+
+# ── CRS of site coordinates (CUSTOMIZE) ───────────────────────────────────────
+site_crs <- "EPSG:32612" # e.g. UTM Zone 12N (WGS84)
+
+# ── Output paths (CUSTOMIZE) ──────────────────────────────────────────────────
+output_csv <- "output/cany-climate-covariates.csv"
+forecast_output_csv <- "output/cany-climate-scenarios.csv"
+
+# ── Climate variables to extract (CUSTOMIZE) ──────────────────────────────────
+extract_ppt <- TRUE # annual precip (aka ppt, mm/yr)
+extract_tmax <- FALSE # annual max temp (aka tmax, °C)
+
+# ── Future year range for forecast CSV (CUSTOMIZE) ────────────────────────────
+# must fall within LOCA2 projection range (2015–2065)
+future_start <- 2025
+future_end <- 2045
+```
+
+## Setup
+
+```{r setup}
+#| message: false
+library(terra)
+library(sf)
+library(tidyr)
+library(ggplot2)
+library(patchwork)
+
+NPS_BOUNDARY_SHP <- "data/nps_boundaries/nps_boundary.shp"
+
+# (feel free to ignore these constants, they're set to match the processed data)
+CLIMATE_DATA_DIR    <- file.path("data", park_code, "processed")
+CLIMATE_FUTURES_CSV <- file.path("data", park_code, "climate-futures-models.csv")
+PRISM_PR_NC      <- file.path(CLIMATE_DATA_DIR, "prism_pr.nc")
+PRISM_TASMAX_NC  <- file.path(CLIMATE_DATA_DIR, "prism_tasmax.nc")
+PRISM_YEARS      <- 1950:2024
+LOCA2_SCEN_YEARS <- list(historical = 1950:2014, ssp245 = 2015:2065, ssp585 = 2015:2065)
+```
+
+## Derive Year Range from Response Data
+
+We take the historical year range from the min/max years of the response data.
+
+```{r year-range}
+response <- read.csv(response_csv, stringsAsFactors = FALSE)
+hist_start <- min(response[[year_col]], na.rm = TRUE)
+hist_end <- max(response[[year_col]], na.rm = TRUE)
+
+message("the historical year range is: ", hist_start, "–", hist_end)
+```
+
+## Load Site Locations
+
+```{r load-sites}
+sites <- read.csv(site_locations_csv, stringsAsFactors = FALSE)
+
+# build a SpatVector of points in the site CRS, then reproject to WGS84
+# (this is bc PRISM and LOCA2 rasters are stored in EPSG:4326).
+sites_vect <- vect(
+  sites,
+  geom  = c(xcoord_col, ycoord_col),
+  crs   = site_crs
+) |> project("EPSG:4326")
+```
+
+## Sanity Check — Site Locations
+
+Quick visual sanity check of the boundary, site locations, and CRS we provided.
+
+```{r sanity-check}
+#| fig-width: 5
+#| fig-height: 4
+nps_all        <- st_read(NPS_BOUNDARY_SHP, quiet = TRUE)
+boundary_wgs84 <- nps_all[nps_all$UNIT_CODE == park_code, ] |>
+  st_transform("EPSG:4326")
+sites_sf <- st_as_sf(sites_vect)
+
+ggplot() +
+  geom_sf(data = boundary_wgs84, fill = "grey95", color = "black", linewidth = 0.6) +
+  geom_sf(data = sites_sf, color = "steelblue", size = 0.8, alpha = 0.6) +
+  labs(title    = "Site locations sanity check",
+       subtitle = "Points should fall within the park boundary",
+       x = NULL, y = NULL) +
+  theme_minimal()
+```
+
+## Extract PRISM Climate at Site Locations
+
+Now we can extract the climate covariate value at each site.
+
+```{r extract-prism}
+# Helper: extract one PRISM variable → long data frame (site_id, year, value)
+extract_prism_var <- function(subds_name, out_col, yr_mask, years) {
+  prism_nc <- if (subds_name == "pr") PRISM_PR_NC else PRISM_TASMAX_NC
+  r <- rast(prism_nc)[[yr_mask]]
+
+  # terra::extract returns a data frame: rows = points, cols = layers
+  vals <- extract(r, sites_vect)          # first col is ID (1-based row index)
+  vals$ID <- NULL
+
+  # Attach site ID and pivot to long format
+  site_meta <- as.data.frame(sites)[, site_id_col, drop = FALSE]
+  vals      <- cbind(site_meta, vals)
+  colnames(vals)[2:ncol(vals)] <- as.character(years)
+
+  long <- tidyr::pivot_longer(
+    vals,
+    cols      = as.character(years),
+    names_to  = year_col,
+    values_to = out_col
+  )
+  long[[year_col]] <- as.integer(long[[year_col]])
+  long
+}
+
+yr_mask <- PRISM_YEARS >= hist_start & PRISM_YEARS <= hist_end
+years   <- PRISM_YEARS[yr_mask]
+
+# collect requested variables
+covar_list <- list()
+if (extract_ppt)  covar_list[["ppt"]]  <- extract_prism_var("pr",     "ppt",  yr_mask, years)
+if (extract_tmax) covar_list[["tmax"]] <- extract_prism_var("tasmax", "tmax", yr_mask, years)
+
+# merge all variables on shared key columns
+key_cols <- c(site_id_col, year_col)
+
+covariates <- Reduce(
+  function(a, b) merge(a, b, by = key_cols, all = TRUE),
+  covar_list
+)
+
+# sort (site → year)
+covariates <- covariates[order(covariates[[site_id_col]],
+                               covariates[[year_col]]), ]
+rownames(covariates) <- NULL
+
+head(covariates)
+```
+
+## Exploratory Plots
+
+Next we can look at the timeseries of our response variable with our covariate(s).
+
+```{r eda-ts}
+#| fig-width: 7
+#| fig-height: 5
+#| warning: false
+clim_vars <- intersect(c("ppt", "tmax"), names(covariates))
+
+var_meta <- list(
+  ppt  = list(label = "Precip (mm/yr)",  color = "steelblue"),
+  tmax = list(label = "Max temp (\u00b0C)", color = "tomato")
+)
+
+ann_mean <- function(df, val_col, yr_col) {
+  agg <- aggregate(df[[val_col]] ~ df[[yr_col]], FUN = mean, na.rm = TRUE)
+  setNames(agg, c("year", "mean"))
+}
+
+# Response panel (top)
+resp_ts <- ann_mean(response, response_var_col, year_col)
+p_resp <- ggplot(resp_ts, aes(x = year, y = mean)) +
+  geom_line(color = "grey30", linewidth = 0.7) +
+  labs(x = NULL, y = response_var_col) +
+  theme_classic(base_size = 11) +
+  theme(axis.title.y = element_text(size = 9))
+
+# One panel per climate variable
+p_clim <- lapply(clim_vars, function(v) {
+  clim_ts <- ann_mean(covariates, v, year_col)
+  meta    <- var_meta[[v]]
+  ggplot(clim_ts, aes(x = year, y = mean)) +
+    geom_line(color = meta$color, linewidth = 0.7) +
+    labs(x = NULL, y = meta$label) +
+    theme_classic(base_size = 11) +
+    theme(axis.title.y = element_text(size = 9))
+})
+
+patchwork::wrap_plots(c(list(p_resp), p_clim), ncol = 1) +
+  patchwork::plot_annotation(
+    title    = "Park-wide annual means",
+    subtitle = paste0(hist_start, "\u2013", hist_end)
+  )
+```
+
+```{r eda-scatter}
+#| fig-width: 7
+#| fig-height: 3
+#| warning: false
+# Join annual means of response and each covariate by year, then scatter
+p_scatter <- lapply(clim_vars, function(v) {
+  clim_ts <- ann_mean(covariates, v, year_col)
+  jdf     <- merge(resp_ts, clim_ts, by = "year", suffixes = c("_resp", "_clim"))
+  meta    <- var_meta[[v]]
+
+  ct   <- cor.test(jdf$mean_clim, jdf$mean_resp, use = "complete.obs")
+  r    <- round(ct$estimate, 2)
+  pval <- round(ct$p.value, 3)
+  lbl  <- paste0("r = ", r, "\np = ", pval)
+
+  ggplot(jdf, aes(x = mean_clim, y = mean_resp)) +
+    geom_point(color = meta$color, size = 2, alpha = 0.7) +
+    geom_smooth(method = "lm", se = TRUE, color = meta$color,
+                fill = meta$color, alpha = 0.15, linewidth = 0.8) +
+    annotate("text", x = Inf, y = Inf, label = lbl,
+             hjust = 1.1, vjust = 1.4, size = 3.2, color = "grey30") +
+    labs(x = meta$label, y = response_var_col) +
+    theme_classic(base_size = 11)
+})
+
+patchwork::wrap_plots(p_scatter, nrow = 1) +
+  patchwork::plot_annotation(
+    title    = paste("Response vs climate covariates —", "annual park-wide means"),
+    subtitle = paste0(hist_start, "\u2013", hist_end)
+  )
+```
+
+## Write Covariate Output
+
+```{r write-output}
+# join Unit_Code and Master_Stratification from response data
+site_meta <- unique(response[, c(site_id_col, unit_code_col, stratum_col)])
+covariates <- merge(covariates, site_meta, by = site_id_col, all.x = TRUE)
+
+# reorder columns: Unit_Code, Master_Stratification, Plot_ID, Visit_Year, <clim vars>
+clim_var_cols <- setdiff(names(covariates), c(unit_code_col, stratum_col, site_id_col, year_col))
+covariates <- covariates[, c(unit_code_col, stratum_col, site_id_col, year_col, clim_var_cols)]
+
+# re-sort (site → year)
+covariates <- covariates[order(covariates[[site_id_col]], covariates[[year_col]]), ]
+rownames(covariates) <- NULL
+
+dir.create(dirname(output_csv), showWarnings = FALSE, recursive = TRUE)
+write.csv(covariates, output_csv, row.names = FALSE)
+message("Wrote ", nrow(covariates), " rows × ", ncol(covariates),
+        " cols to: ", output_csv)
+```
+
+## Extract LOCA2 Climate for Forecasting
+
+For each climate future group, we grab the climate variable(s) at every site point, then assemble a CSV matching the schema expected by the forecasting pipeline: `scenario_id | scenario_name | model_run_id | model_run_name | site_id | stratum_id | cal_year | <var>`.
+
+> **Note:** the column name for the driver variable here (`ppt` or `tmax`) must match the `driver covariate` field in your forecast YAML config.
+
+```{r extract-loca2}
+# Helper: extract one LOCA2 variable for a given model/scenario
+extract_loca2_var <- function(model, scenario, subds_name, out_col) {
+  scen_yrs <- LOCA2_SCEN_YEARS[[scenario]]
+  yr_mask  <- scen_yrs >= future_start & scen_yrs <= future_end
+  years    <- scen_yrs[yr_mask]
+
+  r    <- rast(file.path(CLIMATE_DATA_DIR, "loca2", paste0(model, "_", scenario, "_", subds_name, ".nc")))
+  vals <- extract(r[[which(yr_mask)]], sites_vect)
+  vals$ID <- NULL
+
+  site_ids <- as.data.frame(sites)[, site_id_col, drop = FALSE]
+  vals     <- cbind(site_ids, vals)
+  colnames(vals)[2:ncol(vals)] <- as.character(years)
+
+  long          <- tidyr::pivot_longer(vals, cols = as.character(years),
+                                       names_to = "cal_year", values_to = out_col)
+  long$cal_year <- as.integer(long$cal_year)
+  long
+}
+
+# build the scenarios data frame
+cfm <- read.csv(CLIMATE_FUTURES_CSV, stringsAsFactors = FALSE)
+scen_labels <- unique(cfm$label)
+
+loca2_subds <- c()
+if (extract_ppt)  loca2_subds["ppt"]  <- "pr"
+if (extract_tmax) loca2_subds["tmax"] <- "tasmax"
+
+scenarios_rows <- lapply(seq_along(scen_labels), function(si) {
+  lbl     <- scen_labels[[si]]
+  members <- cfm[cfm$label == lbl, ]
+
+  run_rows <- lapply(seq_len(nrow(members)), function(ri) {
+    model    <- members$model[ri]
+    scenario <- members$scenario[ri]
+
+    # Extract all requested variables and merge
+    var_dfs <- lapply(names(loca2_subds), function(v)
+      extract_loca2_var(model, scenario, loca2_subds[[v]], v)
+    )
+    merged <- Reduce(function(a, b) merge(a, b, by = c(site_id_col, "cal_year")), var_dfs)
+
+    merged$scenario_id    <- si
+    merged$scenario_name  <- lbl
+    merged$model_run_id   <- ri
+    merged$model_run_name <- paste(model, scenario)
+    merged
+  })
+
+  do.call(rbind, run_rows)
+})
+
+scenarios_df <- do.call(rbind, scenarios_rows)
+
+# join stratum and reorder columns to match pipeline schema
+scenarios_df <- merge(scenarios_df, site_meta, by = site_id_col, all.x = TRUE)
+
+front_cols <- c("scenario_id", "scenario_name",
+                "model_run_id", "model_run_name",
+                unit_code_col, site_id_col, stratum_col, "cal_year")
+clim_cols  <- names(loca2_subds)
+scenarios_df <- scenarios_df[, c(front_cols, clim_cols)]
+
+# sort
+scenarios_df <- scenarios_df[order(scenarios_df$scenario_id,
+                                   scenarios_df$model_run_id,
+                                   scenarios_df[[site_id_col]],
+                                   scenarios_df$cal_year), ]
+rownames(scenarios_df) <- NULL
+
+head(scenarios_df)
+```
+
+## Write Forecast Output
+
+```{r write-forecast}
+dir.create(dirname(forecast_output_csv), showWarnings = FALSE, recursive = TRUE)
+write.csv(scenarios_df, forecast_output_csv, row.names = FALSE)
+message("Wrote ", nrow(scenarios_df), " rows × ", ncol(scenarios_df),
+        " cols to: ", forecast_output_csv)
+```

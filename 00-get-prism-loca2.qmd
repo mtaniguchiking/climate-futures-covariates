@@ -1,0 +1,334 @@
+---
+title: "00 — Get PRISM + LOCA2"
+format: html
+---
+
+*This Quarto doc downloads and standardizes two sources of climate data:*
+
+-   *PRISM: (4 km annual, 1950–2024) via the [`prism`](https://cran.r-project.org/package=prism) R package*
+-   *LOCA2: (CMIP6 downscaled to 6km, 1950–2065) directly from the [UCSD server](https://loca.ucsd.edu/loca-version-2-for-north-america-ca-jan-2023/)*
+
+*Both sources are cropped and masked to a user-defined park boundary, then written to NetCDF files for the following, downstream QMDs.*
+
+**User steps**
+
+1.  Customize the `User Config` code block
+
+2.  Verify the visual boundary plot under the `Boundary Check` code block
+
+**Notes**
+
+-   Running this notebook will likely take several minutes (a test run with `park_code <- "CANY"` took \~5 minutes)
+
+-   Outputs are saved in `data/<park_code>/processed/...`
+
+## User Config
+
+```{r user-config}
+# ── Park identifier (CUSTOMIZE) ───────────────────────────────────────────────
+# a 4-letter NPS unit code (e.g. "CANY", "YELL", "GRCA")
+park_code <- "CANY"
+```
+
+## Setup
+
+```{r setup}
+#| message: false
+library(terra)
+library(sf)
+library(ggplot2)
+library(prism)
+library(httr)
+
+NPS_BOUNDARY_SHP <- "data/nps_boundaries/nps_boundary.shp"
+
+# output paths
+raw_dir <- file.path("data", park_code, "raw")
+prism_dl_dir <- file.path(raw_dir, "prism")
+loca2_dl_dir <- file.path(raw_dir, "loca2")
+out_dir <- file.path("data", park_code, "processed")
+loca2_out <- file.path(out_dir, "loca2")
+
+for (d in c(prism_dl_dir, loca2_dl_dir, loca2_out)) dir.create(d, recursive = TRUE, showWarnings = FALSE)
+
+# constants (leave these unchanged)
+PRISM_YEARS     <- 1950:2024
+LOCA2_YEARS     <- 1950:2065
+LOCA2_SCENARIOS <- c("ssp245", "ssp585")
+LOCA2_MODELS <- c(
+  "ACCESS-CM2", "AWI-CM-1-1-MR", "BCC-CSM2-MR", "CNRM-CM6-1",
+  "CNRM-ESM2-1", "EC-Earth3", "EC-Earth3-Veg", "FGOALS-g3",
+  "GFDL-CM4", "GFDL-ESM4", "HadGEM3-GC31-LL", "INM-CM4-8",
+  "INM-CM5-0", "IPSL-CM6A-LR", "KACE-1-0-G", "MIROC6",
+  "MPI-ESM1-2-HR", "MRI-ESM2-0", "NorESM2-LM", "NorESM2-MM"
+)
+
+# one available ensemble member per model
+LOCA2_ENSEMBLES <- c(
+  "ACCESS-CM2"      = "r4i1p1f1", "AWI-CM-1-1-MR" = "r1i1p1f1",
+  "BCC-CSM2-MR"     = "r1i1p1f1", "CNRM-CM6-1"    = "r1i1p1f2",
+  "CNRM-ESM2-1"     = "r1i1p1f2", "EC-Earth3"     = "r1i1p1f1",
+  "EC-Earth3-Veg"   = "r1i1p1f1", "FGOALS-g3"     = "r1i1p1f1",
+  "GFDL-CM4"        = "r1i1p1f1", "GFDL-ESM4"     = "r1i1p1f1",
+  "HadGEM3-GC31-LL" = "r1i1p1f3", "INM-CM4-8"     = "r1i1p1f1",
+  "INM-CM5-0"       = "r1i1p1f1", "IPSL-CM6A-LR"  = "r1i1p1f1",
+  "KACE-1-0-G"      = "r1i1p1f1", "MIROC6"        = "r1i1p1f1",
+  "MPI-ESM1-2-HR"   = "r1i1p1f1", "MRI-ESM2-0"    = "r1i1p1f1",
+  "NorESM2-LM"      = "r1i1p1f1", "NorESM2-MM"    = "r1i1p1f1"
+)
+
+LOCA2_BASE_URL <- "https://cirrus.ucsd.edu/~pierce/LOCA2/CONUS_regions_split"
+LOCA2_REGION <- "s_west"
+LOCA2_RES <- "0p0625deg"
+
+LOCA2_DATE_RANGES <- list(
+  ssp245 = c("2015-2044", "2045-2074"),
+  ssp585 = c("2015-2044", "2045-2074")
+)
+
+PR_TO_MM_YR <- 86400 * 365.25 # kg m-2 s-1 -> mm yr-1
+K_TO_C <- -273.15 # K -> degC
+
+terraOptions(progress = 0)  # suppress terra progress bars
+```
+
+## Load Boundary
+
+```{r boundary}
+#| message: false
+nps_all <- st_read(NPS_BOUNDARY_SHP, quiet = TRUE)
+
+if (!park_code %in% nps_all$UNIT_CODE) {
+  stop(
+    "'", park_code, "' is not a valid NPS unit code. ",
+    "Check the UNIT_CODE field in ", NPS_BOUNDARY_SHP, "."
+  )
+}
+
+boundary_wgs84 <- nps_all[nps_all$UNIT_CODE == park_code, ] |>
+  st_transform("EPSG:4326")
+boundary_vect <- vect(boundary_wgs84)
+
+park_name <- unique(boundary_wgs84$UNIT_NAME)
+message("Loaded boundary for: ", park_name, " (", park_code, ")")
+```
+
+## Boundary Check
+
+Quick visual sanity check of the boundary we provided.
+
+```{r boundary-check}
+#| fig-width: 5
+#| fig-height: 4
+ggplot() +
+  geom_sf(data = boundary_wgs84, fill = "grey85", color = "black", linewidth = 0.7) +
+  labs(
+    title    = paste("Boundary check –", park_name),
+    subtitle = paste0("NPS unit code: ", park_code)
+  ) +
+  theme_minimal()
+```
+
+## PRISM
+
+### Download
+
+We can download PRISM annual rasters (ppt and tmax) via the `prism` R package to the raw directory.
+
+```{r prism-download}
+#| warning: false
+prism_set_dl_dir(prism_dl_dir)
+
+invisible(capture.output(suppressMessages({
+  get_prism_annual("ppt",  years = PRISM_YEARS, keepZip = FALSE)
+  get_prism_annual("tmax", years = PRISM_YEARS, keepZip = FALSE)
+})))
+
+message("Downloaded PRISM ppt + tmax (", min(PRISM_YEARS), "–", max(PRISM_YEARS), ")")
+```
+
+### Standardize + Crop
+
+Now we stack all years for each variable, crop and mask to the boundary, convert units, and write to `prism.nc`.
+
+```{r prism-standardize}
+#| message: false
+
+# (helper) load one variable for all years as a SpatRaster, crop to boundary
+load_prism_var <- function(type) {
+  bil_paths <- sort(list.files(prism_dl_dir,
+                               pattern   = paste0("prism_", type, ".*\\.bil$"),
+                               recursive = TRUE, full.names = TRUE,
+                               ignore.case = TRUE))
+  if (!length(bil_paths)) {
+    # check whether the server returned rate-limit error text files instead
+    txt_files <- list.files(prism_dl_dir,
+                            pattern = paste0("prism_", type, ".*\\.txt$"),
+                            full.names = TRUE)
+    if (length(txt_files)) {
+      stop("PRISM download was rate-limited by the server. ",
+           "Delete data/", park_code, "/raw/prism/ and wait 24 hours before re-running.")
+    }
+    stop("No PRISM .bil files found for type: ", type)
+  }
+  r  <- rast(bil_paths)
+  bv <- project(boundary_vect, crs(r))
+  crop(mask(r, bv), bv)
+}
+
+prism_pr     <- load_prism_var("ppt") # already mm/yr
+prism_tasmax <- load_prism_var("tmax") # already degC
+
+suppressWarnings(writeRaster(prism_pr, file.path(out_dir, "prism_pr.nc"), filetype = "netCDF", overwrite = TRUE))
+suppressWarnings(writeRaster(prism_tasmax, file.path(out_dir, "prism_tasmax.nc"), filetype = "netCDF", overwrite = TRUE))
+
+message("Wrote prism_pr.nc and prism_tasmax.nc")
+```
+
+### Clean Up Raw PRISM
+
+```{r prism-cleanup}
+unlink(prism_dl_dir, recursive = TRUE)
+message("Removed raw PRISM downloads")
+```
+
+## LOCA2
+
+### Download
+
+For each model, scenario, and date-range chunk, we grab the appropriate NetCDF from the UCSD server:
+
+```{r loca2-helpers}
+list_loca2_dir <- function(url) {
+  resp <- GET(url, timeout(60))
+  if (status_code(resp) == 404L) return(character())
+  stop_for_status(resp)
+  html <- content(resp, as = "text", encoding = "UTF-8")
+  m <- gregexpr('href="([^"?/][^"]*)"', html, perl = TRUE)
+  hrefs <- regmatches(html, m)[[1]]
+  gsub('href="|"', "", hrefs) |> trimws() |> sub(pattern = "/$", replacement = "")
+}
+
+# return the best matching filename for a model/scenario/variable/date_range.
+find_loca2_file <- function(model, scenario, variable, date_range) {
+  ensemble <- LOCA2_ENSEMBLES[[model]]
+  url <- paste(LOCA2_BASE_URL, model, LOCA2_REGION, LOCA2_RES,
+               ensemble, scenario, variable, "", sep = "/")
+  files <- list_loca2_dir(url)
+  cands <- files[grepl(date_range, files, fixed = TRUE) & grepl("\\.nc$", files)]
+  # prefer yearly
+  yearly <- cands[grepl("\\.yearly\\.", cands) & !grepl("all_mean", cands)]
+  if (length(yearly)) return(list(url = url, file = sort(yearly)[1]))
+  # fall back to monthly
+  monthly <- cands[grepl("\\.monthly\\.", cands) & !grepl("clim", cands)]
+  if (length(monthly)) return(list(url = url, file = sort(monthly)[1]))
+  NULL
+}
+```
+
+```{r loca2-download}
+#| message: false
+for (model in LOCA2_MODELS) {
+  for (scenario in LOCA2_SCENARIOS) {
+    for (date_range in LOCA2_DATE_RANGES[[scenario]]) {
+      for (variable in c("pr", "tasmax")) {
+        found <- find_loca2_file(model, scenario, variable, date_range)
+        if (is.null(found)) {
+          message("[skip] ", model, "/", scenario, "/", variable, "/", date_range, " — not found")
+          next
+        }
+        dest_dir  <- file.path(loca2_dl_dir, model, scenario, variable)
+        dir.create(dest_dir, recursive = TRUE, showWarnings = FALSE)
+        dest_file <- file.path(dest_dir, found$file)
+        dl_url    <- paste0(found$url, found$file)
+        message("[dl] ", model, "/", scenario, "/", variable, "/", found$file)
+        download.file(dl_url, dest_file, mode = "wb", quiet = TRUE)
+      }
+    }
+  }
+}
+```
+
+### Load + Convert LOCA2 Variables
+
+This helper loads all downloaded files for a given model/scenario/variable. For `tasmax`, which is downloaded as monthly data, it computes the annual mean. For both variables, it applies unit conversions.
+
+```{r loca2-annual-tasmax}
+# for a given model/scenario, load all downloaded tasmax files
+# and return a list(arr, years) where arr is (time, lat, lon) in degC.
+load_loca2_var <- function(model, scenario, variable) {
+  var_dir <- file.path(loca2_dl_dir, model, scenario, variable)
+  files   <- sort(list.files(var_dir, pattern = "\\.nc$", full.names = TRUE))
+  if (!length(files)) return(NULL)
+
+  chunks <- lapply(files, function(f) {
+    r <- rotate(rast(f))  # LOCA2 uses 0-360 lon so we rotate to -180/+180
+    n_layers <- nlyr(r)
+    is_monthly <- n_layers > (LOCA2_YEARS[length(LOCA2_YEARS)] - LOCA2_YEARS[1] + 1) * 1.5
+
+    if (is_monthly) {
+      yrs <- as.integer(format(time(r), "%Y"))
+      unique_yrs <- sort(unique(yrs))
+      annual_layers <- lapply(unique_yrs, function(y) mean(r[[which(yrs == y)]]))
+      r <- rast(annual_layers)
+      time(r) <- as.Date(paste0(unique_yrs, "-07-01"))
+    }
+
+    # unit conversion
+    if (variable == "pr") {
+      r <- r * PR_TO_MM_YR
+    } else {
+      r <- r + K_TO_C
+    }
+    list(r = r, years = as.integer(format(time(r), "%Y")))
+  })
+
+  # concatenate chunks along time
+  r_all    <- rast(lapply(chunks, `[[`, "r"))
+  yrs_all  <- unlist(lapply(chunks, `[[`, "years"))
+  list(r = r_all, years = yrs_all)
+}
+```
+
+### Standardize + Crop LOCA2
+
+For each model and scenario, we crop and mask to the boundary and write two NetCDFs per model–scenario pair (e.g. `ACCESS-CM2_ssp245_pr.nc` and `ACCESS-CM2_ssp245_tasmax.nc`), one per variable.
+
+```{r loca2-standardize}
+#| message: false
+process_var <- function(vd) {
+  if (is.null(vd)) return(NULL)
+  in_range <- vd$years >= min(LOCA2_YEARS) & vd$years <= max(LOCA2_YEARS)
+  bv       <- project(boundary_vect, crs(vd$r))
+  r        <- crop(mask(vd$r[[which(in_range)]], bv), bv)
+  time(r)  <- as.Date(paste0(vd$years[in_range], "-07-01"))
+  r
+}
+
+for (model in LOCA2_MODELS) {
+  message("Processing ", model, " ...")
+  for (scenario in LOCA2_SCENARIOS) {
+    pr_r     <- process_var(load_loca2_var(model, scenario, "pr"))
+    tasmax_r <- process_var(load_loca2_var(model, scenario, "tasmax"))
+
+    if (is.null(pr_r) && is.null(tasmax_r)) {
+      message("  [skip] ", model, "/", scenario, " — no data found")
+      next
+    }
+
+    base <- file.path(loca2_out, paste0(model, "_", scenario))
+    if (!is.null(pr_r))
+      suppressWarnings(writeRaster(pr_r,     paste0(base, "_pr.nc"),     filetype = "netCDF", overwrite = TRUE))
+    if (!is.null(tasmax_r))
+      suppressWarnings(writeRaster(tasmax_r, paste0(base, "_tasmax.nc"), filetype = "netCDF", overwrite = TRUE))
+    message("  -> ", base, "_{pr,tasmax}.nc")
+  }
+}
+```
+
+### Clean Up Raw LOCA2
+
+```{r loca2-cleanup}
+unlink(raw_dir, recursive = TRUE)
+message("Removed raw LOCA2 downloads")
+```

@@ -1,0 +1,238 @@
+---
+title: "Climate Futures Model Selection"
+format: html
+---
+
+*This Quarto doc takes processed PRISM + CMIP6 LOCA2 data (downloaded via `00-get-prism-loca2.qmd`). It classifies the CMIP6 model runs into climate futures (warm-wet, hot-dry, etc.) following the [Climate Futures for Planning](https://irma.nps.gov/DataStore/FileSource/Get?id=2302720&filename=2302720.html) framework. For a given park code, it produces a quadrant scatter plot and writes a CSV of the selected model members for later plotting.*
+
+**User steps**
+
+1.  Customize the `User Config` code block
+
+    -   The `selected_futures` var can be selected to align with CCRP park-specific futures or simply based on user interest. CCRP park-specific futures have been defined in the park's respective [Climate Futures Summaries](https://www.nps.gov/subjects/climatechange/climatefutures.htm) report (click "Open this panel to choose your park report," then select your park of interest on the website)
+    -   The `..._start` and `..._end` year vars are loosely based on the CCRP Climate Futures [methods report](https://irma.nps.gov/DataStore/FileSource/Get?id=2302720&filename=2302720.html). The default ranges should be appropriate for most cases, but feel free to change as needed
+
+2.  If you'd like, examine the quadrant plot and model members of the selected climate futures
+
+**Notes**
+
+-   Outputs are saved in `data/<park_code>/climate-futures-models.csv`
+
+## User Config
+
+```{r user-config}
+# ── Park identifier (CUSTOMIZE) ───────────────────────────────────────────────
+park_code <- "CANY"
+
+# ── Climate futures to include in the output CSV (CUSTOMIZE) ──────────────────
+# Options: "warm-wet", "warm-dry", "hot-dry", "hot-wet", "central"
+selected_futures <- c("warm-wet", "hot-dry")
+
+# ── Time periods for anomaly calculation (CUSTOMIZE) ──────────────────────────
+# customize these or leave them as is
+# baseline/historical period 
+baseline_start <- 1984
+baseline_end <- 2014
+# future window
+midcent_start <- 2035
+midcent_end <- 2065
+```
+
+## Setup
+
+```{r setup}
+#| message: false
+library(terra)
+library(ggplot2)
+
+# (feel free to ignore these constants, they're set to match the processed data)
+CLIMATE_DATA_DIR <- file.path("data", park_code, "processed")
+OUTPUT_CSV <- file.path("data", park_code, "climate-futures-models.csv")
+LOCA2_SCEN_YEARS <- list(historical = 1950:2014, ssp245 = 2015:2065, ssp585 = 2015:2065)
+LOCA2_MODELS <- unique(sub("_(historical|ssp245|ssp585)_(pr|tasmax)\\.nc$", "",
+                            list.files(file.path(CLIMATE_DATA_DIR, "loca2"), pattern = "\\.nc$")))
+PRISM_YEARS <- 1950:2024
+PRISM_PR_NC <- file.path(CLIMATE_DATA_DIR, "prism_pr.nc")
+PRISM_TASMAX_NC <- file.path(CLIMATE_DATA_DIR, "prism_tasmax.nc")
+```
+
+## Helper Functions
+
+```{r helpers}
+extract_ts_mean <- function(r) {
+  global(r, "mean", na.rm = TRUE)$mean
+}
+```
+
+## Compute Mid-Century Anomalies
+
+Here we compute the mid-century mean anomaly in `tasmax` and `pr` relative to the observed PRISM baseline for each of the 40 model/scenario pairs (20 models x SSP2-4.5 + SSP5-8.5).
+
+```{r compute-anomalies}
+#| message: false
+# pre-compute PRISM observed baselines
+baseline_idx <- which(PRISM_YEARS >= baseline_start & PRISM_YEARS <= baseline_end)
+prism_baseline <- list(
+  tasmax = mean(extract_ts_mean(rast(PRISM_TASMAX_NC)[[baseline_idx]])),
+  pr     = mean(extract_ts_mean(rast(PRISM_PR_NC)[[baseline_idx]]))
+)
+
+# opens each model/scenario file and returns mid-century anomalies
+compute_midcent_anomalies <- function(model, scenario) {
+  nc_base  <- file.path(CLIMATE_DATA_DIR, "loca2", paste0(model, "_", scenario))
+  scen_yrs <- LOCA2_SCEN_YEARS[[scenario]]
+  fut_idx  <- which(scen_yrs >= midcent_start & scen_yrs <= midcent_end)
+
+  fut_tas <- mean(extract_ts_mean(rast(paste0(nc_base, "_tasmax.nc"))[[fut_idx]]))
+  fut_pr  <- mean(extract_ts_mean(rast(paste0(nc_base, "_pr.nc"))[[fut_idx]]))
+
+  list(
+    tas = fut_tas - prism_baseline$tasmax,
+    pr  = (fut_pr - prism_baseline$pr) / prism_baseline$pr * 100
+  )
+}
+
+model_grid <- expand.grid(model    = LOCA2_MODELS,
+                          scenario = c("ssp245", "ssp585"),
+                          stringsAsFactors = FALSE)
+
+anomaly_df <- do.call(rbind, lapply(seq_len(nrow(model_grid)), function(i) {
+  anoms <- compute_midcent_anomalies(model_grid$model[i], model_grid$scenario[i])
+  data.frame(model    = model_grid$model[i],
+             scenario = model_grid$scenario[i],
+             tas      = anoms$tas,
+             pr       = anoms$pr)
+}))
+```
+
+## Classify into Climate Futures
+
+Now we can assign the runs a climate future label based on where its temperature and precipitation anomalies fall relative to the ensemble's 25th, 50th, and 75th percentiles.
+
+```{r classify}
+q_tas <- quantile(anomaly_df$tas, c(0.25, 0.50, 0.75))
+q_pr  <- quantile(anomaly_df$pr,  c(0.25, 0.50, 0.75))
+
+classify_future <- function(tas, pr, q_tas, q_pr) {
+  ifelse(
+    (tas < q_tas["25%"] & pr < q_pr["50%"]) | (tas < q_tas["50%"] & pr < q_pr["25%"]), "warm-dry",
+  ifelse(
+    (tas < q_tas["25%"] & pr > q_pr["50%"]) | (tas < q_tas["50%"] & pr > q_pr["75%"]), "warm-wet",
+  ifelse(
+    (tas > q_tas["75%"] & pr < q_pr["50%"]) | (tas > q_tas["50%"] & pr < q_pr["25%"]), "hot-dry",
+  ifelse(
+    (tas > q_tas["75%"] & pr > q_pr["50%"]) | (tas > q_tas["50%"] & pr > q_pr["75%"]), "hot-wet",
+    "central"
+  ))))
+}
+
+classified_df <- transform(anomaly_df,
+  climate_future = classify_future(tas, pr, q_tas, q_pr)
+)
+
+table(classified_df$climate_future)
+```
+
+## Quadrant Plot
+
+```{r quadrant-plot}
+#| fig-width: 8
+#| fig-height: 6
+future_colors <- c(
+  "hot-dry"  = "#b5381c",
+  "hot-wet"  = "#2c7bb6",
+  "warm-dry" = "#e88b29",
+  "warm-wet" = "#1a9641",
+  "central"  = "gray50"
+)
+
+med_tas <- q_tas["50%"]
+med_pr  <- q_pr["50%"]
+
+ssp245_df <- subset(classified_df, scenario == "ssp245")
+ssp585_df <- subset(classified_df, scenario == "ssp585")
+
+ggplot(classified_df, aes(x = tas, y = pr)) +
+  # Quadrant background shading (anchored to ensemble medians)
+  annotate("rect", xmin = -Inf,    xmax = med_tas, ymin = med_pr, ymax = Inf,
+           fill = future_colors["warm-wet"], alpha = 0.10) +
+  annotate("rect", xmin = -Inf,    xmax = med_tas, ymin = -Inf,   ymax = med_pr,
+           fill = future_colors["warm-dry"], alpha = 0.10) +
+  annotate("rect", xmin = med_tas, xmax = Inf,     ymin = med_pr, ymax = Inf,
+           fill = future_colors["hot-wet"],  alpha = 0.10) +
+  annotate("rect", xmin = med_tas, xmax = Inf,     ymin = -Inf,   ymax = med_pr,
+           fill = future_colors["hot-dry"],  alpha = 0.10) +
+  # IQR box
+  annotate("rect",
+           xmin = q_tas["25%"], xmax = q_tas["75%"],
+           ymin = q_pr["25%"],  ymax = q_pr["75%"],
+           fill = NA, color = "gray50", linetype = "dashed", linewidth = 0.6) +
+  # Median lines
+  geom_vline(xintercept = med_tas, color = "gray50", linetype = "dashed") +
+  geom_hline(yintercept = med_pr,  color = "gray50", linetype = "dashed") +
+  # SSP2-4.5: filled circles (fill = climate future color, black border)
+  geom_point(data = ssp245_df,
+             aes(fill = climate_future),
+             shape = 21, color = "black", size = 3, stroke = 0.7) +
+  # SSP5-8.5: hollow circles (outline = climate future color)
+  geom_point(data = ssp585_df,
+             aes(color = climate_future),
+             shape = 21, fill = NA, size = 3, stroke = 0.7) +
+  # Quadrant corner labels
+  annotate("text", x = -Inf, y = Inf,  label = "Warm\u2013Wet",
+           hjust = -0.1, vjust = 1.4, color = "gray30", fontface = "bold", size = 3.5) +
+  annotate("text", x = -Inf, y = -Inf, label = "Warm\u2013Dry",
+           hjust = -0.1, vjust = -0.4, color = "gray30", fontface = "bold", size = 3.5) +
+  annotate("text", x = Inf,  y = Inf,  label = "Hot\u2013Wet",
+           hjust = 1.1,  vjust = 1.4, color = "gray30", fontface = "bold", size = 3.5) +
+  annotate("text", x = Inf,  y = -Inf, label = "Hot\u2013Dry",
+           hjust = 1.1,  vjust = -0.4, color = "gray30", fontface = "bold", size = 3.5) +
+  scale_fill_manual(values = future_colors, name = "Climate future") +
+  scale_color_manual(values = future_colors, guide = "none") +
+  scale_x_continuous(expand = expansion(mult = 0.12)) +
+  scale_y_continuous(expand = expansion(mult = 0.12)) +
+  labs(
+    title    = paste("Climate Futures \u2013", park_code),
+    subtitle = paste0(
+      "Baseline: ", baseline_start, "\u2013", baseline_end,
+      "   |   Mid-century: ", midcent_start, "\u2013", midcent_end,
+      "   \u25cf SSP2-4.5 (filled)   \u25cb SSP5-8.5 (hollow)"
+    ),
+    x = "Temperature anomaly (\u00b0C)",
+    y = "Precipitation anomaly (%)"
+  ) +
+  theme_bw()
+```
+
+## Export CSV
+
+Finally, we filter to the selected climate futures and write the CSV.
+
+```{r export-csv}
+output_df <- subset(classified_df, climate_future %in% selected_futures)
+output_df <- output_df[order(output_df$climate_future, output_df$model), ]
+
+# Capitalise first letter of label (e.g. "warm-wet" → "Warm-wet")
+cap_first <- function(x) paste0(toupper(substr(x, 1, 1)), substr(x, 2, nchar(x)))
+output_df$label <- cap_first(output_df$climate_future)
+
+dir.create(dirname(OUTPUT_CSV), showWarnings = FALSE, recursive = TRUE)
+write.csv(output_df[, c("label", "model", "scenario")],
+          OUTPUT_CSV, row.names = FALSE)
+message("Wrote ", nrow(output_df), " model/scenario pairs to: ", OUTPUT_CSV)
+
+# Warn if any selected future has no model/scenario pairs
+empty_futures <- selected_futures[
+  !selected_futures %in% output_df$climate_future
+]
+if (length(empty_futures) > 0) {
+  warning(
+    "The following selected climate future(s) have 0 models: ",
+    paste(empty_futures, collapse = ", "), ".\n",
+    "Consider selecting a different future from: ",
+    paste(setdiff(unique(classified_df$climate_future), selected_futures), collapse = ", "), "."
+  )
+}
+
+knitr::kable(output_df[, c("label", "model", "scenario")], row.names = FALSE)
+```

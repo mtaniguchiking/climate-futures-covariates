@@ -1,0 +1,22 @@
+# Quarto renders
+*.html
+*_files/
+
+# Outputs
+output/
+
+# Park-specific data (downloaded by notebooks)
+data/*
+!data/nps_boundaries/
+data/nps_boundaries/*.xml
+
+# GDAL sidecar files
+*.aux.xml
+
+# macOS metadata
+.DS_Store
+
+# R/RStudio user files
+.Rproj.user/
+.RData
+.Rhistory

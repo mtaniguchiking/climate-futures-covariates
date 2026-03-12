@@ -1,0 +1,293 @@
+---
+title: "Plot PRISM + LOCA2"
+format: html
+---
+
+*This Quarto doc takes in processed PRISM + CMIP6 LOCA2 data. For a given park code and its specific climate futures model members (via `01-get-climate-futures.qmd`), it provides a few temporal and spatial EDA plots.*
+
+**User steps**
+
+1.  Customize the `User Config` code block
+
+    -   The `start` and `end` year vars should be set to the periods you are interested in. For example, if I plan on using the pipeline to forecast from 2025-2045, those could be my `future_start` and `future_end` values
+
+2.  If you'd like, examine the temporal and spatial plots
+
+## User Config
+
+```{r user-config}
+# ── Park identifier (CUSTOMIZE) ───────────────────────────────────────────────
+park_code <- "CANY"
+
+# ── Time ranges (CUSTOMIZE) ───────────────────────────────────────────────────
+# PRISM historical data range: 1950-2024
+# LOCA2 projection data range: 2015-2065
+hist_start <- 1994  # start of historical plot window
+hist_end <- 2024  # end of historical plot window
+future_start <- 2025  # start of future plot window
+future_end <- 2045  # end of future plot window
+```
+
+## Setup
+
+```{r setup}
+#| message: false
+library(terra)
+library(sf)
+library(ggplot2)
+library(tidyterra)
+library(patchwork)
+
+NPS_BOUNDARY_SHP <- "data/nps_boundaries/nps_boundary.shp"
+
+# (feel free to ignore these constants, they're set to match the processed data)
+CLIMATE_DATA_DIR    <- file.path("data", park_code, "processed")
+CLIMATE_FUTURES_CSV <- file.path("data", park_code, "climate-futures-models.csv")
+PRISM_PR_NC <- file.path(CLIMATE_DATA_DIR, "prism_pr.nc")
+PRISM_TASMAX_NC  <- file.path(CLIMATE_DATA_DIR, "prism_tasmax.nc")
+PRISM_YEARS <- 1950:2024
+LOCA2_SCEN_YEARS <- list(historical = 1950:2014, ssp245 = 2015:2065, ssp585 = 2015:2065)
+```
+
+## Helper Functions
+
+These are just some helper functions to prepare the data for plotting.
+
+```{r helpers}
+#| message: false
+nps_all        <- st_read(NPS_BOUNDARY_SHP, quiet = TRUE)
+boundary_wgs84 <- nps_all[nps_all$UNIT_CODE == park_code, ] |>
+  st_transform("EPSG:4326")
+park_name      <- unique(boundary_wgs84$UNIT_NAME)
+
+# Returns one spatial mean per layer (data is pre-masked in 00-get-prism-loca2).
+extract_ts_mean <- function(r) {
+  global(r, "mean", na.rm = TRUE)$mean
+}
+
+# Collapses all layers to a single time-mean SpatRaster.
+extract_spatial_mean <- function(r) {
+  mean(r)
+}
+
+# Build scenario groups from CSV; order of groups follows the CSV.
+.scen_df   <- read.csv(CLIMATE_FUTURES_CSV, stringsAsFactors = FALSE)
+.scen_lbls <- unique(.scen_df$label)
+scenarios  <- setNames(
+  lapply(.scen_lbls, function(lbl) {
+    df <- .scen_df[.scen_df$label == lbl, ]
+    list(label = lbl, members = df[, c("model", "scenario")])
+  }),
+  .scen_lbls
+)
+
+# assign plot colours
+.pal <- c("steelblue", "tomato", "forestgreen", "darkorange", "purple")
+group_colors <- c("PRISM" = "black",
+                  setNames(.pal[seq_along(scenarios)], names(scenarios)))
+roll_n <- 10 # rolling average window in years (for timeseries plots)
+```
+
+## Load Data
+
+Now we load the PRISM + LOCA2 data using the helpers defined above.
+
+### PRISM
+
+```{r load-prism}
+#| message: false
+hist_mask <- PRISM_YEARS >= hist_start & PRISM_YEARS <= hist_end
+
+prism_ppt_r  <- rast(PRISM_PR_NC)
+prism_tmax_r <- rast(PRISM_TASMAX_NC)
+
+prism_ppt_df <- data.frame(year   = PRISM_YEARS[hist_mask],
+                           value  = extract_ts_mean(prism_ppt_r[[hist_mask]]),
+                           source = "PRISM")
+prism_tmax_df <- data.frame(year   = PRISM_YEARS[hist_mask],
+                            value  = extract_ts_mean(prism_tmax_r[[hist_mask]]),
+                            source = "PRISM")
+
+prism_ppt_rast  <- extract_spatial_mean(prism_ppt_r[[hist_mask]])
+prism_tmax_rast <- extract_spatial_mean(prism_tmax_r[[hist_mask]])
+```
+
+### LOCA2
+
+```{r load-loca2}
+#| message: false
+# Returns a data frame (year, value, source) averaged across all group members.
+load_loca2_ts <- function(group, variable) {
+  rows <- lapply(seq_len(nrow(group$members)), function(i) {
+    model    <- group$members$model[i]
+    scenario <- group$members$scenario[i]
+    scen_yrs <- LOCA2_SCEN_YEARS[[scenario]]
+    yr_mask  <- scen_yrs >= future_start & scen_yrs <= future_end
+    r        <- rast(file.path(CLIMATE_DATA_DIR, "loca2",
+                               paste0(model, "_", scenario, "_", variable, ".nc")))
+    data.frame(year  = scen_yrs[yr_mask],
+               value = extract_ts_mean(r[[which(yr_mask)]]))
+  })
+  agg        <- aggregate(value ~ year, data = do.call(rbind, rows), FUN = mean)
+  agg$source <- group$label
+  agg
+}
+
+# Returns a single-layer SpatRaster: spatial mean over future_start–future_end,
+# averaged across all group members.
+load_loca2_rast <- function(group, variable) {
+  rasters <- lapply(seq_len(nrow(group$members)), function(i) {
+    model    <- group$members$model[i]
+    scenario <- group$members$scenario[i]
+    scen_yrs <- LOCA2_SCEN_YEARS[[scenario]]
+    yr_mask  <- scen_yrs >= future_start & scen_yrs <= future_end
+    r        <- rast(file.path(CLIMATE_DATA_DIR, "loca2",
+                               paste0(model, "_", scenario, "_", variable, ".nc")))
+    extract_spatial_mean(r[[which(yr_mask)]])
+  })
+  Reduce("+", rasters) / length(rasters)
+}
+
+loca2_ppt_df  <- do.call(rbind, lapply(scenarios, load_loca2_ts, variable = "pr"))
+loca2_tmax_df <- do.call(rbind, lapply(scenarios, load_loca2_ts, variable = "tasmax"))
+
+loca2_ppt_rasts  <- lapply(scenarios, load_loca2_rast, variable = "pr")
+loca2_tmax_rasts <- lapply(scenarios, load_loca2_rast, variable = "tasmax")
+```
+
+## Sanity check — boundary alignment
+
+Quick visual sanity check of the boundary we provided.
+
+```{r sanity-check}
+#| fig-width: 5
+#| fig-height: 4
+ggplot() +
+  geom_spatraster(data = prism_ppt_rast) +
+  geom_sf(data = boundary_wgs84, fill = NA, color = "red", linewidth = 0.6) +
+  scale_fill_distiller(palette = "Blues", direction = 1,
+                       na.value = NA, name = "mm/yr") +
+  labs(title    = paste("Boundary check –", park_name),
+       subtitle = paste0("PRISM mean precipitation ", hist_start, "–", hist_end)) +
+  theme_minimal()
+```
+
+## Time-Series Plots
+
+If the sanity check looks good, we can take a look at some timeseries plots.
+
+```{r ts-helper}
+make_ts_plot <- function(prism_df, loca2_df, y_label, title) {
+  plot_df        <- rbind(prism_df, loca2_df)
+  plot_df$source <- factor(plot_df$source,
+                            levels = c("PRISM", names(scenarios)))
+
+  # Compute centred rolling mean per source group
+  roll_df <- do.call(rbind, lapply(split(plot_df, plot_df$source), function(d) {
+    d        <- d[order(d$year), ]
+    d$roll   <- as.numeric(stats::filter(d$value, rep(1 / roll_n, roll_n), sides = 2))
+    d
+  }))
+
+  ggplot(plot_df, aes(x = year, y = value, color = source)) +
+    geom_line(data = roll_df, aes(y = roll), linewidth = 0.6,
+              alpha = 0.5, na.rm = TRUE) +
+    geom_line(linewidth = 0.8) +
+    scale_color_manual(values = group_colors) +
+    labs(title    = title,
+         subtitle = paste0(roll_n, "-year rolling average (lighter line)"),
+         x = "Year", y = y_label, color = NULL) +
+    theme_minimal()
+}
+```
+
+```{r ts-ppt}
+make_ts_plot(prism_ppt_df, loca2_ppt_df,
+             y_label = "Mean Annual Precipitation (mm/yr)",
+             title   = paste("Annual Precipitation –", park_name))
+```
+
+```{r ts-tmax}
+make_ts_plot(prism_tmax_df, loca2_tmax_df,
+             y_label = "Mean Annual Max Temperature (°C)",
+             title   = paste("Annual Max Temperature –", park_name))
+```
+
+## Spatial Anomaly Maps
+
+And finally some spatial plots.
+
+```{r spatial-helper}
+# prism_rast  : single-layer SpatRaster (PRISM baseline, native resolution)
+# group_rasts : named list of single-layer SpatRasters (one per scenario group)
+# anom_fn     : function(future_rast, baseline_rast) -> anomaly SpatRaster
+spatial_panels <- function(prism_rast, group_rasts,
+                            base_palette, base_name,
+                            anom_palette, anom_direction, anom_name,
+                            anom_fn, title) {
+  # Reproject PRISM baseline to LOCA2 grid for anomaly calculation
+  prism_resampled <- project(prism_rast, group_rasts[[1]], method = "bilinear")
+  anom_rasts <- lapply(group_rasts, function(gr) anom_fn(gr, prism_resampled))
+  anom_lim   <- max(abs(unlist(lapply(anom_rasts, function(r) values(r, na.rm = TRUE)))),
+                    na.rm = TRUE)
+
+  cany_vect  <- vect(boundary_wgs84)
+  cany_prism <- project(cany_vect, prism_rast)
+  cany_loca2 <- project(cany_vect, group_rasts[[1]])
+
+  theme_map <- theme_void() +
+    theme(legend.position = "bottom",
+          plot.title = element_text(hjust = 0.5, size = 10))
+
+  p_base <- ggplot() +
+    geom_spatraster(data = prism_rast) +
+    geom_spatvector(data = cany_prism, fill = NA, color = "white", linewidth = 0.4) +
+    scale_fill_distiller(palette = base_palette, direction = 1,
+                         na.value = NA, name = base_name) +
+    labs(title = paste0("PRISM mean\n(", hist_start, "–", hist_end, ")")) +
+    theme_map
+
+  make_anom_panel <- function(r, group_label) {
+    ggplot() +
+      geom_spatraster(data = r) +
+      geom_spatvector(data = cany_loca2, fill = NA, color = "white", linewidth = 0.4) +
+      scale_fill_distiller(palette = anom_palette, direction = anom_direction,
+                           limits = c(-anom_lim, anom_lim),
+                           na.value = NA, name = anom_name) +
+      labs(title = paste0(group_label, "\nvs PRISM (",
+                          future_start, "–", future_end, ")")) +
+      theme_map
+  }
+
+  anom_panels <- mapply(make_anom_panel, anom_rasts, names(group_rasts),
+                        SIMPLIFY = FALSE)
+  Reduce("|", c(list(p_base), anom_panels)) +
+    plot_annotation(title = title,
+                    theme = theme(plot.title = element_text(hjust = 0.5,
+                                                             face = "bold")))
+}
+```
+
+```{r spatial-ppt}
+#| fig-width: 10
+#| fig-height: 4
+spatial_panels(
+  prism_ppt_rast, loca2_ppt_rasts,
+  base_palette   = "Blues",  base_name      = "mm/yr",
+  anom_palette   = "BrBG",   anom_direction = 1,  anom_name = "% change",
+  anom_fn        = function(fut, base) (fut - base) / base * 100,
+  title          = paste("Mean Annual Precipitation –", park_name)
+)
+```
+
+```{r spatial-tmax}
+#| fig-width: 10
+#| fig-height: 4
+spatial_panels(
+  prism_tmax_rast, loca2_tmax_rasts,
+  base_palette   = "YlOrRd", base_name      = "°C",
+  anom_palette   = "RdBu",   anom_direction = -1, anom_name = "Δ°C",
+  anom_fn        = function(fut, base) fut - base,
+  title          = paste("Mean Annual Max Temperature –", park_name)
+)
+```
