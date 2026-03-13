@@ -4,7 +4,7 @@ This repo is a collection of four notebooks that combine observed and projected 
 
 These notebooks are intended as an early support tool for M4MD users who want to test the pipeline's developing forecast features. Depending on feedback, this can later be formalized into a more proper pipeline. Don't hesitate to share feedback/issues you come across 🙏
 
-> Canyonlands National Park (CANY) is presented as an example (e.g. the default user config values align with CANY).
+> Default configuration values are set for Canyonlands National Park (CANY), which serves as the example if you want something to reference.
 
 ---
 
@@ -26,8 +26,7 @@ The general approach for each notebook is:
 2. Run the notebook. If you're using RStudio, this can be done by either clicking `Render` or interactively running each code cell.
 3. Once the notebook has been rendered/ran, scroll through and inspect the outputs.
 
-
-> **You can find a short set of instructions at the beginning of each notebook for reference!**
+**You can find a short set of instructions at the beginning of each notebook for reference!**
 
 ```
 00-get-prism-loca2.qmd
