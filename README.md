@@ -11,8 +11,8 @@ These notebooks are intended as an early support tool for M4MD users who want to
 ## Table of Contents
 
 1. [How It Works](#how-it-works)
-2. [Notebook Reference](#notebook-reference)
-3. [Installation & Setup](#installation--setup)
+2. [Installation & Setup](#installation--setup)
+3. [Notebook Reference](#notebook-reference)
 4. [Using the Outputs in M4MD](#using-the-outputs-in-m4md)
 5. [Data & Limitations](#data--limitations)
 
@@ -47,6 +47,21 @@ The general approach for each notebook is:
 ```
 
 `02` is optional - it's just for understanding your data and doesn't produce any outputs that are used later.
+
+---
+
+## Installation & Setup
+
+1. Clone the repo and open `climate-futures-covariates.Rproj` in RStudio.
+
+2. Restore the R package environment:
+   ```r
+   renv::restore()
+   ```
+
+3. Run the notebooks in order, customizing the `User Config` block at the top of each one.
+
+**R packages used:** `terra`, `sf`, `ggplot2`, `prism`, `httr`, `tidyr`, `patchwork`, `tidyterra`
 
 ---
 
@@ -133,21 +148,6 @@ The main output-generating notebook. Takes the processed climate data and your M
 | `Master_Stratification` | stratum label |
 | `cal_year` | year |
 | `ppt` / `tmax` | projected climate value at site |
-
----
-
-## Installation & Setup
-
-1. Clone the repo and open `climate-futures-covariates.Rproj` in RStudio.
-
-2. Restore the R package environment:
-   ```r
-   renv::restore()
-   ```
-
-3. Run the notebooks in order, customizing the `User Config` block at the top of each one.
-
-**R packages used:** `terra`, `sf`, `ggplot2`, `prism`, `httr`, `tidyr`, `patchwork`, `tidyterra`
 
 ---
 
