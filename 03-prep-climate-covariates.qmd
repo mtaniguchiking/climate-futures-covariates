@@ -48,12 +48,12 @@ site_crs <- "EPSG:32612" # e.g. UTM Zone 12N (WGS84)
 
 # ── Output paths (CUSTOMIZE) ──────────────────────────────────────────────────
 # filenames only — files are always written to the output/ folder
-fit_output_csv <- "cany-climate-covariates.csv"
-forecast_output_csv <- "cany-climate-scenarios.csv"
+fit_output_csv <- "cany-climate-covariates.csv" # for model fitting
+forecast_output_csv <- "cany-climate-scenarios.csv" # for model forecasting
 
 # ── Climate variables to extract (CUSTOMIZE) ──────────────────────────────────
 extract_ppt <- TRUE # annual precip (aka ppt, mm/yr)
-extract_tmax <- FALSE # annual max temp (aka tmax, °C)
+extract_tmax <- TRUE # annual max temp (aka tmax, °C)
 
 # ── Future year range for forecast CSV (CUSTOMIZE) ────────────────────────────
 # must fall within LOCA2 projection range (2015–2065)
