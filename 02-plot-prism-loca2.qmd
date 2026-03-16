@@ -155,23 +155,6 @@ loca2_ppt_rasts  <- lapply(scenarios, load_loca2_rast, variable = "pr")
 loca2_tmax_rasts <- lapply(scenarios, load_loca2_rast, variable = "tasmax")
 ```
 
-## Sanity check — boundary alignment
-
-Quick visual sanity check of the boundary we provided.
-
-```{r sanity-check}
-#| fig-width: 5
-#| fig-height: 4
-ggplot() +
-  geom_spatraster(data = prism_ppt_rast) +
-  geom_sf(data = boundary_wgs84, fill = NA, color = "red", linewidth = 0.6) +
-  scale_fill_distiller(palette = "Blues", direction = 1,
-                       na.value = NA, name = "mm/yr") +
-  labs(title    = paste("Boundary check –", park_name),
-       subtitle = paste0("PRISM mean precipitation ", hist_start, "–", hist_end)) +
-  theme_minimal()
-```
-
 ## Time-Series Plots
 
 If the sanity check looks good, we can take a look at some timeseries plots.
