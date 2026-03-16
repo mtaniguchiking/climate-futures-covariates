@@ -52,16 +52,14 @@ The general approach for each notebook is:
 
 ## Installation & Setup
 
-1. Clone the repo and open `climate-futures-covariates.Rproj` in RStudio.
+1. Get this repository locally. If you're familiar with git, you can clone it. Otherwise, download it as a ZIP from GitHub (green "Code" button → "Download ZIP") and unzip it somewhere convenient.
 
-2. Restore the R package environment:
+2. Open `climate-futures-covariates.Rproj` in RStudio.
+
+3. Restore the R package environment by running the following in the RStudio console. This installs all required packages at the versions used when the notebooks were written — you only need to do this once.
    ```r
    renv::restore()
    ```
-
-3. Run the notebooks in order, customizing the `User Config` block at the top of each one.
-
-**R packages used:** `terra`, `sf`, `ggplot2`, `prism`, `httr`, `tidyr`, `patchwork`, `tidyterra`
 
 ---
 
