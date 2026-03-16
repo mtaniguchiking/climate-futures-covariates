@@ -20,7 +20,7 @@ format: html
 
 **Notes**
 
--   Outputs are saved at `output_csv` + `forecast_output_csv` which you define in the `User Config` code block.
+-   Outputs are saved to the `output/` folder using the filenames you define as `fit_output_csv` and `forecast_output_csv` in the `User Config` code block.
 
 ## User Config
 
@@ -47,8 +47,9 @@ ycoord_col <- "y_coord" # northing / latitude column
 site_crs <- "EPSG:32612" # e.g. UTM Zone 12N (WGS84)
 
 # ── Output paths (CUSTOMIZE) ──────────────────────────────────────────────────
-output_csv <- "output/cany-climate-covariates.csv"
-forecast_output_csv <- "output/cany-climate-scenarios.csv"
+# filenames only — files are always written to the output/ folder
+fit_output_csv <- "cany-climate-covariates.csv"
+forecast_output_csv <- "cany-climate-scenarios.csv"
 
 # ── Climate variables to extract (CUSTOMIZE) ──────────────────────────────────
 extract_ppt <- TRUE # annual precip (aka ppt, mm/yr)
@@ -139,7 +140,7 @@ extract_prism_var <- function(subds_name, out_col, yr_mask, years) {
   r <- rast(prism_nc)[[yr_mask]]
 
   # terra::extract returns a data frame: rows = points, cols = layers
-  vals <- extract(r, sites_vect)          # first col is ID (1-based row index)
+  vals <- terra::extract(r, sites_vect)   # first col is ID (1-based row index)
   vals$ID <- NULL
 
   # Attach site ID and pivot to long format
@@ -274,10 +275,11 @@ covariates <- covariates[, c(unit_code_col, stratum_col, site_id_col, year_col, 
 covariates <- covariates[order(covariates[[site_id_col]], covariates[[year_col]]), ]
 rownames(covariates) <- NULL
 
-dir.create(dirname(output_csv), showWarnings = FALSE, recursive = TRUE)
-write.csv(covariates, output_csv, row.names = FALSE)
+out_path <- file.path("output", fit_output_csv)
+dir.create("output", showWarnings = FALSE, recursive = TRUE)
+write.csv(covariates, out_path, row.names = FALSE)
 message("Wrote ", nrow(covariates), " rows × ", ncol(covariates),
-        " cols to: ", output_csv)
+        " cols to: ", out_path)
 ```
 
 ## Extract LOCA2 Climate for Forecasting
@@ -294,7 +296,7 @@ extract_loca2_var <- function(model, scenario, subds_name, out_col) {
   years    <- scen_yrs[yr_mask]
 
   r    <- rast(file.path(CLIMATE_DATA_DIR, "loca2", paste0(model, "_", scenario, "_", subds_name, ".nc")))
-  vals <- extract(r[[which(yr_mask)]], sites_vect)
+  vals <- terra::extract(r[[which(yr_mask)]], sites_vect)
   vals$ID <- NULL
 
   site_ids <- as.data.frame(sites)[, site_id_col, drop = FALSE]
@@ -363,8 +365,9 @@ head(scenarios_df)
 ## Write Forecast Output
 
 ```{r write-forecast}
-dir.create(dirname(forecast_output_csv), showWarnings = FALSE, recursive = TRUE)
-write.csv(scenarios_df, forecast_output_csv, row.names = FALSE)
+forecast_out_path <- file.path("output", forecast_output_csv)
+dir.create("output", showWarnings = FALSE, recursive = TRUE)
+write.csv(scenarios_df, forecast_out_path, row.names = FALSE)
 message("Wrote ", nrow(scenarios_df), " rows × ", ncol(scenarios_df),
-        " cols to: ", forecast_output_csv)
+        " cols to: ", forecast_out_path)
 ```
