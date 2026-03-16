@@ -50,11 +50,11 @@ The general approach for each notebook is:
 
 ## Installation & Setup
 
-1. Get this repository locally. If you're familiar with git, you can clone it. Otherwise, download it as a ZIP from GitHub (green "Code" button → "Download ZIP") and unzip it somewhere convenient.
+1. Get this repository locally. If you're familiar with git, you can clone it. Otherwise, download it as a ZIP from GitHub (green "Code" button → "Download ZIP").
 
 2. Open `climate-futures-covariates.Rproj` in RStudio.
 
-3. Restore the R package environment by running the following in the RStudio console. This installs all required packages at the versions used when the notebooks were written — you only need to do this once.
+3. Restore the R package environment by running the following in the RStudio console. This installs all required packages (you only need to do this once).
    ```r
    renv::restore()
    ```
@@ -78,7 +78,7 @@ Downloads raw climate data, crops and masks everything to a specified park bound
 - `data/<park_code>/processed/loca2/<model>_<scenario>_pr.nc` (one per model/scenario)
 - `data/<park_code>/processed/loca2/<model>_<scenario>_tasmax.nc`
 
-> Note: this notebook downloads a good amount of data and can take several minutes for a single park.
+> Note: this notebook downloads a fair amount of data and can take several minutes for a single park.
 
 ---
 
