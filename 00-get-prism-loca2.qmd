@@ -28,6 +28,12 @@ format: html
 # ── Park identifier (CUSTOMIZE) ───────────────────────────────────────────────
 # a 4-letter NPS unit code (e.g. "CANY", "YELL", "GRCA")
 park_code <- "CANY"
+
+# ── LOCA2 region (CUSTOMIZE if park is outside the southwest) ─────────────────
+# See map: https://loca.ucsd.edu/wp-content/uploads/2023/08/plot_reg.R-768x481.png
+# Options: "cent", "e_n_cent", "n_east", "n_west", "s_east", "s_west", "south",
+#          "w_n_cent", "west", "west105"
+loca2_region <- "s_west"
 ```
 
 ## Setup
@@ -78,7 +84,6 @@ LOCA2_ENSEMBLES <- c(
 )
 
 LOCA2_BASE_URL <- "https://cirrus.ucsd.edu/~pierce/LOCA2/CONUS_regions_split"
-LOCA2_REGION <- "s_west"
 LOCA2_RES <- "0p0625deg"
 
 LOCA2_DATE_RANGES <- list(
@@ -212,7 +217,7 @@ list_loca2_dir <- function(url) {
 # return the best matching filename for a model/scenario/variable/date_range.
 find_loca2_file <- function(model, scenario, variable, date_range) {
   ensemble <- LOCA2_ENSEMBLES[[model]]
-  url <- paste(LOCA2_BASE_URL, model, LOCA2_REGION, LOCA2_RES,
+  url <- paste(LOCA2_BASE_URL, model, loca2_region, LOCA2_RES,
                ensemble, scenario, variable, "", sep = "/")
   files <- list_loca2_dir(url)
   cands <- files[grepl(date_range, files, fixed = TRUE) & grepl("\\.nc$", files)]
