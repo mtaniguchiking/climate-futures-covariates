@@ -4,7 +4,7 @@ This repo is a collection of four notebooks that combine observed and projected 
 
 These notebooks are intended as an early support tool for M4MD users who want to test the pipeline's developing forecast features. Depending on feedback, this can later be formalized into a more proper pipeline. Don't hesitate to share feedback/issues you come across 🙏
 
-> Default configuration values are set for Canyonlands National Park (CANY), which serves as the example if you want something to reference.
+> Default configuration values are set for Canyonlands National Park (CANY), which serve as an example if you want something to reference.
 
 ---
 
@@ -23,7 +23,7 @@ These notebooks are intended as an early support tool for M4MD users who want to
 Please run the four notebooks in order. Each one depends on outputs from the previous.
 The general approach for each notebook is:
 1. Customize the `User config` code block located at the beginning of the notebook. This is the only code block you need to change, although feel free to mess around with the rest of the code or add additional analysis if you're interested.
-2. Run the notebook. If you're using RStudio, this can be done by either clicking `Render` or interactively running each code cell.
+2. Run the notebook. If you're using RStudio, this can be done by either clicking `Render` or interactively running each code cell. For running cells one by one, I prefer the `Visual` view over the `Source` view (toggleable on the top left of RStudio).
 3. Once the notebook has been rendered/ran, scroll through and inspect the outputs.
 
 **You can find a short set of instructions at the beginning of each notebook for reference!**
@@ -45,8 +45,6 @@ The general approach for each notebook is:
   └─> extracts climate values at your M4MD site locations
       writes the two CSVs used by the M4MD pipeline
 ```
-
-`02` is optional - it's just for understanding your data and doesn't produce any outputs that are used later.
 
 ---
 
@@ -151,13 +149,37 @@ The main output-generating notebook. Takes the processed climate data and your M
 
 ## Using the Outputs in M4MD
 
-The two output CSVs from notebook `03` are formatted directly for the M4MD pipeline.
+The two output CSVs from notebook `03` (found in the `output` folder) are formatted be to inputs for the M4MD pipeline. As a reminder, the idea here is to take an existing M4MD model that includes a prepared response variable CSV, site locations CSV, etc and provide a covariates CSV for model fitting and future covariates CSV for model forecasting.
 
-- **`<park_code>-climate-covariates.csv`** - use this as the climate covariate input when fitting your M4MD model. [_TODO: add specific field/config reference in the M4MD pipeline_]
+- **`fit_output_csv`** - use this as the covariate input when fitting your M4MD model. I recommend copying/moving this file into your M4MD repo `assets/_data/`. Then, the covariate sections of your config YAML could look something like (customize the `\<blanks\>`):
 
-- **`<park_code>-climate-scenarios.csv`** - use this as the forecast driver input. The `scenario_name` and `model_run_name` columns correspond to the climate future and individual model run, respectively. [_TODO: add specific field/config reference in the M4MD pipeline_]
+```
+covariate info:
+  file: assets/_data/<fit_output_csv>.csv
+  event date info:
+    date-time column: <year_col>
+    date-time format: Y!
+  covariate columns:
+    - <climate_var> # ppt or tmax
 
-> The column name for the climate variable (e.g. `ppt` or `tmax`) in the scenarios CSV needs to match the `driver covariate` field in your M4MD forecast YAML config.
+# ... other configs not shown ...
+
+additional covariates:
+  - <climate_var>
+  - "<climate_var>, <climate_var>*<stratum_col>"
+
+time effect: disabled # recommended
+```
+
+- **`forecast_output_csv`** - use this as the forecast driver input. The `scenario_name` and `model_run_name` columns correspond to the climate future and individual model run. I also recommend copying/moving this file into your M4MD repo `assets/_data/`. Then, you can update the following key-Value pairs in your forecast config YAML in `M4MD/forecasting/forecast`: 
+
+```
+scenarios_file: assets/_data/<forecast_output_csv>.csv
+
+# ... other configs not shown ...
+
+driver covariate: <climate_var> # ppt or tmax
+```
 
 ---
 
@@ -171,7 +193,7 @@ The two output CSVs from notebook `03` are formatted directly for the M4MD pipel
 
 ### Limitations / Notes on the data we're using
 
-- **Park bounday data** - The NPS boundary shapefile is already included in the repo at nps_boundaries — no download needed.
+- **Park bounday data** - The NPS boundary shapefile is already included in this repo at nps_boundaries.
 - **PRISM <> LOCA2** - LOCA2 bias correction is not performed using PRISM. This means there may be some small inconsistencies between the historical and future projection data. However, in the context of simply testing forecasting features, PRISM was selected for its accurancy and easy of use.
 - **Single covariate for forecasting** - the M4MD forecasting pipeline currently handles only one future scenario covariate. Covariates should be consistent between model fitting and model forecasting. Thus, for the purposes of testing the forecasting features, you should fit your model with only one covariate (either temp OR precip) and then forecast with this same covariate. The forecasting pipeline will accept more than one covariate in the future.
 - **PRISM rate limiting** - the PRISM download server will throttle requests. If you hit the rate limit, you will have to wait 24 hours before re-running notebook `00`.
