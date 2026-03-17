@@ -284,9 +284,9 @@ message("Wrote ", nrow(covariates), " rows × ", ncol(covariates),
 
 ## Extract LOCA2 Climate for Forecasting
 
-For each climate future group, we grab the climate variable(s) at every site point, then assemble a CSV matching the schema expected by the forecasting pipeline: `scenario_id | scenario_name | model_run_id | model_run_name | site_id | stratum_id | cal_year | <var>`.
+For each climate future group, we grab the climate variable(s) at every site point, then assemble a CSV matching the schema expected by the forecasting pipeline: `scenario_id | scenario_name | model_run_id | model_run_name | site_id | stratum_id | year_col | <var>`.
 
-> **Note:** the column name for the driver variable here (`ppt` or `tmax`) must match the `driver covariate` field in your forecast YAML config.
+> **Note:** the column name for the driver variable here (`ppt` or `tmax`) must match the `driver covariate` field in your forecast YAML config. The year column name matches `year_col` from the User Config.
 
 ```{r extract-loca2}
 # Helper: extract one LOCA2 variable for a given model/scenario
@@ -303,9 +303,9 @@ extract_loca2_var <- function(model, scenario, subds_name, out_col) {
   vals     <- cbind(site_ids, vals)
   colnames(vals)[2:ncol(vals)] <- as.character(years)
 
-  long          <- tidyr::pivot_longer(vals, cols = as.character(years),
-                                       names_to = "cal_year", values_to = out_col)
-  long$cal_year <- as.integer(long$cal_year)
+  long              <- tidyr::pivot_longer(vals, cols = as.character(years),
+                                         names_to = year_col, values_to = out_col)
+  long[[year_col]]  <- as.integer(long[[year_col]])
   long
 }
 
@@ -329,7 +329,7 @@ scenarios_rows <- lapply(seq_along(scen_labels), function(si) {
     var_dfs <- lapply(names(loca2_subds), function(v)
       extract_loca2_var(model, scenario, loca2_subds[[v]], v)
     )
-    merged <- Reduce(function(a, b) merge(a, b, by = c(site_id_col, "cal_year")), var_dfs)
+    merged <- Reduce(function(a, b) merge(a, b, by = c(site_id_col, year_col)), var_dfs)
 
     merged$scenario_id    <- si
     merged$scenario_name  <- lbl
@@ -348,7 +348,7 @@ scenarios_df <- merge(scenarios_df, site_meta, by = site_id_col, all.x = TRUE)
 
 front_cols <- c("scenario_id", "scenario_name",
                 "model_run_id", "model_run_name",
-                unit_code_col, site_id_col, stratum_col, "cal_year")
+                unit_code_col, site_id_col, stratum_col, year_col)
 clim_cols  <- names(loca2_subds)
 scenarios_df <- scenarios_df[, c(front_cols, clim_cols)]
 
@@ -356,7 +356,7 @@ scenarios_df <- scenarios_df[, c(front_cols, clim_cols)]
 scenarios_df <- scenarios_df[order(scenarios_df$scenario_id,
                                    scenarios_df$model_run_id,
                                    scenarios_df[[site_id_col]],
-                                   scenarios_df$cal_year), ]
+                                   scenarios_df[[year_col]]), ]
 rownames(scenarios_df) <- NULL
 
 head(scenarios_df)
