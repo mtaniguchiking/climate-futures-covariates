@@ -305,7 +305,7 @@ process_var <- function(vd) {
   if (is.null(vd)) return(NULL)
   in_range <- vd$years >= min(LOCA2_YEARS) & vd$years <= max(LOCA2_YEARS)
   bv       <- project(boundary_vect, crs(vd$r))
-  r        <- crop(mask(vd$r[[which(in_range)]], bv, touches = TRUE), bv)
+  r        <- crop(mask(vd$r[[which(in_range)]], bv, touches = TRUE), bv, snap = "out")
   time(r)  <- as.Date(paste0(vd$years[in_range], "-07-01"))
   r
 }
