@@ -104,7 +104,6 @@ You pick which futures you want to carry forward (e.g. "warm-wet" and "hot-dry")
 ### `02-plot-prism-loca2.qmd` *(optional)*
 
 Some quick exploratory plots. Produces:
-- A boundary alignment check (PRISM raster overlaid with the park boundary)
 - Time-series plots of ppt and tmax for PRISM (historical) and LOCA2 (projected)
 - Spatial mean maps per selected climate future
 
@@ -120,18 +119,18 @@ The main output-generating notebook. Takes the processed climate data and your M
 
 **Outputs:**
 
-`output/<park_code>-climate-covariates.csv` - historical site-level climate, for M4MD model fitting:
+`output/<fit_output_csv>.csv` - historical site-level climate, for M4MD model fitting:
 
 | column | description |
 |---|---|
-| `Unit_Code` | NPS unit code |
-| `Master_Stratification` | stratum label |
-| `Plot_ID` | site identifier |
-| `Visit_Year` | year |
+| `<unit_code_col>` | NPS unit code |
+| `<stratum_col>` | stratum label |
+| `<site_id_col>` | site identifier |
+| `<year_col>` | year |
 | `ppt` | annual precip at site (mm/yr), if extracted |
 | `tmax` | annual max temp at site (°C), if extracted |
 
-`output/<park_code>-climate-scenarios.csv` - projected site-level climate per future, for M4MD forecasting:
+`output/<forecast_output_csv>.csv` - projected site-level climate per future, for M4MD forecasting:
 
 | column | description |
 |---|---|
@@ -139,11 +138,12 @@ The main output-generating notebook. Takes the processed climate data and your M
 | `scenario_name` | climate future label (e.g. `Hot-dry`) |
 | `model_run_id` | integer ID for the model member |
 | `model_run_name` | model + scenario string (e.g. `CNRM-CM6-1 ssp585`) |
-| `Unit_Code` | NPS unit code |
-| `Plot_ID` | site identifier |
-| `Master_Stratification` | stratum label |
-| `cal_year` | year |
-| `ppt` / `tmax` | projected climate value at site |
+| `<unit_code_col>` | NPS unit code |
+| `<site_id_col>` | site identifier |
+| `<stratum_col>` | stratum label |
+| `<year_col>` | year |
+| `ppt` | annual precip at site (mm/yr), if extracted |
+| `tmax` | annual max temp at site (°C), if extracted |
 
 ---
 
@@ -171,7 +171,7 @@ additional covariates:
 time effect: disabled # recommended
 ```
 
-- **`forecast_output_csv`** - use this as the forecast driver input. The `scenario_name` and `model_run_name` columns correspond to the climate future and individual model run. I also recommend copying/moving this file into your M4MD repo `assets/_data/`. Then, you can update the following key-Value pairs in your forecast config YAML in `M4MD/forecasting/forecast`: 
+- **`forecast_output_csv`** - use this as the forecast driver input. The `scenario_name` and `model_run_name` columns correspond to the climate future and individual model run. I also recommend copying/moving this file into your M4MD repo `assets/_data/`. Then, you can update the following key-value pairs in your forecast config YAML in `M4MD/forecasting/forecast`: 
 
 ```
 scenarios_file: assets/_data/<forecast_output_csv>.csv
