@@ -112,7 +112,7 @@ if (!park_code %in% nps_all$UNIT_CODE) {
 
 boundary_wgs84 <- nps_all[nps_all$UNIT_CODE == park_code, ] |>
   st_transform("EPSG:4326")
-boundary_vect <- vect(boundary_wgs84)
+boundary_vect <- vect(boundary_wgs84) |> buffer(width = 500)  # 500 m buffer to capture edge plots
 
 park_name <- unique(boundary_wgs84$UNIT_NAME)
 message("Loaded boundary for: ", park_name, " (", park_code, ")")
