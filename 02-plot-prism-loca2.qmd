@@ -209,7 +209,7 @@ spatial_panels <- function(prism_rast, group_rasts,
                             anom_palette, anom_direction, anom_name,
                             anom_fn, title) {
   # Reproject PRISM baseline to LOCA2 grid for anomaly calculation
-  prism_resampled <- project(prism_rast, group_rasts[[1]], method = "bilinear")
+  prism_resampled <- project(prism_rast, group_rasts[[1]], method = "near")
   anom_rasts <- lapply(group_rasts, function(gr) anom_fn(gr, prism_resampled))
   anom_lim   <- max(abs(unlist(lapply(anom_rasts, function(r) values(r, na.rm = TRUE)))),
                     na.rm = TRUE)
@@ -217,6 +217,10 @@ spatial_panels <- function(prism_rast, group_rasts,
   cany_vect  <- vect(boundary_wgs84)
   cany_prism <- project(cany_vect, prism_rast)
   cany_loca2 <- project(cany_vect, group_rasts[[1]])
+
+  # Use PRISM extent for all panels so tiny parks don't get squashed aspect ratios
+  map_xlim <- c(xmin(prism_rast), xmax(prism_rast))
+  map_ylim <- c(ymin(prism_rast), ymax(prism_rast))
 
   theme_map <- theme_void() +
     theme(legend.position = "bottom",
@@ -228,6 +232,7 @@ spatial_panels <- function(prism_rast, group_rasts,
     scale_fill_distiller(palette = base_palette, direction = 1,
                          na.value = NA, name = base_name) +
     labs(title = paste0("PRISM mean\n(", hist_start, "–", hist_end, ")")) +
+    coord_sf(xlim = map_xlim, ylim = map_ylim, expand = FALSE) +
     theme_map
 
   make_anom_panel <- function(r, group_label) {
@@ -239,6 +244,7 @@ spatial_panels <- function(prism_rast, group_rasts,
                            na.value = NA, name = anom_name) +
       labs(title = paste0(group_label, "\nvs PRISM (",
                           future_start, "–", future_end, ")")) +
+      coord_sf(xlim = map_xlim, ylim = map_ylim, expand = FALSE) +
       theme_map
   }
 
