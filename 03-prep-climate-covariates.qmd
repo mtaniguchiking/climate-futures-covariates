@@ -11,8 +11,8 @@ format: html
 
     -   The `response_csv` and `site_locations_csv` should be taken directly from a working M4MD pipeline model. For example, if you have a pipeline model where the response var is percent vegetation cover, you could provide that with the corresponding site locations
     -   The column name vars should be based on the `response_csv` and `site_locations_csv` column names
-    -   `extract_ppt` and `extract_tmax` should reflect what subset of covariates you'd like. Currently, the forecasting pipeline only handles a single covariate (to be updated soon!)
-    -   `future_start` and `future_end` should reflect the range of years you'd like to forecast in the pipeline
+    -   `extract_ppt` and `extract_tmax` should reflect the set covariates you'd like to fit and forecast with
+    -   `future_start` and `future_end` should reflect the range of years you'd like to forecast over
 
 2.  Verify the visual boundary plot and site locations under the `Sanity Check — Site Locations` code block
 
@@ -29,8 +29,8 @@ format: html
 park_code <- "CANY"
 
 # ── Input paths (CUSTOMIZE) ───────────────────────────────────────────────────
-response_csv <- "/Users/max/Documents/SP26/M4MD/assets/_data/cany-ricegrass-cover.csv"
-site_locations_csv <- "/Users/max/Documents/SP26/M4MD/assets/_data/cany-plot-locs.csv"
+response_csv <- "/M4MD/assets/_data/cany-ricegrass-cover.csv"
+site_locations_csv <- "/M4MD/assets/_data/cany-plot-locs.csv"
 
 # ── Column names (CUSTOMIZE) ──────────────────────────────────────────────────
 # these should match the column names used in the response csv
