@@ -18,7 +18,7 @@ format: html
 
 **Notes**
 
--   Running this notebook will likely take several minutes (a test run with `park_code <- "CANY"` took \~5 minutes)
+-   Running this notebook will likely take several minutes. Based on testing, runtime seems to vary between runs (perhaps from external server response time). Tests with `park_code <- "CANY"` took my computer 5-10 minutes to render.
 
 -   Outputs are saved in `data/<park_code>/processed/...`
 
@@ -30,8 +30,8 @@ format: html
 park_code <- "CANY"
 
 # ── LOCA2 region (CUSTOMIZE if park is outside the southwest) ─────────────────
-# See map: https://loca.ucsd.edu/wp-content/uploads/2023/08/plot_reg.R-768x481.png
-# Options: "cent", "e_n_cent", "n_east", "n_west", "s_east", "s_west", "south",
+# see map: https://loca.ucsd.edu/wp-content/uploads/2023/08/plot_reg.R-768x481.png
+# options: "cent", "e_n_cent", "n_east", "n_west", "s_east", "s_west", "south",
 #          "w_n_cent", "west", "west105"
 loca2_region <- "s_west"
 ```
@@ -178,7 +178,7 @@ load_prism_var <- function(type) {
   }
   r  <- rast(bil_paths)
   bv <- project(boundary_vect, crs(r))
-  crop(mask(r, bv), bv)
+  crop(mask(r, bv, touches = TRUE), bv, snap = "out")
 }
 
 prism_pr     <- load_prism_var("ppt") # already mm/yr
@@ -305,6 +305,7 @@ process_var <- function(vd) {
   if (is.null(vd)) return(NULL)
   in_range <- vd$years >= min(LOCA2_YEARS) & vd$years <= max(LOCA2_YEARS)
   bv       <- project(boundary_vect, crs(vd$r))
+  if (!relate(bv, as.polygons(ext(vd$r)), "intersects")) return(NULL)
   r        <- crop(mask(vd$r[[which(in_range)]], bv, touches = TRUE), bv, snap = "out")
   time(r)  <- as.Date(paste0(vd$years[in_range], "-07-01"))
   r
@@ -317,7 +318,7 @@ for (model in LOCA2_MODELS) {
     tasmax_r <- process_var(load_loca2_var(model, scenario, "tasmax"))
 
     if (is.null(pr_r) && is.null(tasmax_r)) {
-      message("  [skip] ", model, "/", scenario, " — no data found")
+      message("  [skip] ", model, "/", scenario, " — no data or no overlap with boundary")
       next
     }
 
@@ -334,6 +335,6 @@ for (model in LOCA2_MODELS) {
 ### Clean Up Raw LOCA2
 
 ```{r loca2-cleanup}
-unlink(raw_dir, recursive = TRUE)
+unlink(loca2_dl_dir, recursive = TRUE)
 message("Removed raw LOCA2 downloads")
 ```
