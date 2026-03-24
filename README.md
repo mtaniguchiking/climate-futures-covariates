@@ -160,15 +160,15 @@ covariate info:
     date-time column: <year_col>
     date-time format: Y!
   covariate columns:
-    - <climate_var> # ppt or tmax
+    - <climate_var> # ppt and/or tmax
 
 # ... other configs not shown ...
 
 additional covariates:
-  - <climate_var>
-  - "<climate_var>, <climate_var>*<stratum_col>"
+  - "<climate_var>, <climate_var>*<stratum_col>" # use this if you're only using ppt OR tmax
+#  -  "ppt, tmax, ppt*<stratum_col>, tmax*<stratum_col>" # use this if you're using both ppt AND tmax
 
-time effect: disabled # recommended
+time effect: disabled # recommended for forecasting
 ```
 
 - **`forecast_output_csv`** - use this as the forecast driver input. The `scenario_name` and `model_run_name` columns correspond to the climate future and individual model run. I also recommend copying/moving this file into your M4MD repo `assets/_data/`. Then, you can update the following key-value pairs in your forecast config YAML in `M4MD/forecasting/forecast`: 
@@ -178,7 +178,11 @@ scenarios_file: assets/_data/<forecast_output_csv>.csv
 
 # ... other configs not shown ...
 
-driver covariate: <climate_var> # ppt or tmax
+covariates:
+  <climate_var>:
+    source: provided
+#  <climate_var>: # include a second climate variable if you have two
+#    source: provided
 ```
 
 ---
@@ -195,6 +199,6 @@ driver covariate: <climate_var> # ppt or tmax
 
 - **Park bounday data** - The NPS boundary shapefile is already included in this repo at nps_boundaries.
 - **PRISM <> LOCA2** - LOCA2 bias correction is not performed using PRISM. This means there may be some small inconsistencies between the historical and future projection data. However, in the context of simply testing forecasting features, PRISM was selected for its accurancy and easy of use.
-- **Single covariate for forecasting** - the M4MD forecasting pipeline currently handles only one future scenario covariate. Covariates should be consistent between model fitting and model forecasting. Thus, for the purposes of testing the forecasting features, you should fit your model with only one covariate (either temp OR precip) and then forecast with this same covariate. The forecasting pipeline will accept more than one covariate in the future.
-- **PRISM rate limiting** - the PRISM download server will throttle requests. If you hit the rate limit, you will have to wait 24 hours before re-running notebook `00`.
+- **Limited covariates for fitting + forecasting** - Covariates should be consistent between model fitting and model forecasting. Thus, for the purposes of testing the forecasting features, you should fit your model with only temp and/or precip (configurable in 03) and then forecast with these same covariate(s).
+- **PRISM rate limiting** - the PRISM download server will throttle requests (usually 2 downloads are allowed each day). If you hit the rate limit, you will have to wait 24 hours before re-running notebook `00`.
 - **One ensemble member per model** - only one ensemble member is used per CMIP6 model (see the `LOCA2_ENSEMBLES` list in notebook `00` for the specific members). This keeps the download manageable but means within-model variability isn't captured.
