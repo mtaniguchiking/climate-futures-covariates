@@ -191,7 +191,7 @@ covariates:
 
 ### Data sources
 
-- **PRISM** - [PRISM Climate Group](https://prism.oregonstate.edu/), Oregon State University. Annual 4 km gridded climate data, 1950–2024.
+- **PRISM** - [PRISM Group](https://prism.oregonstate.edu/), Oregon State University, accessed March 2026. Annual 4 km gridded climate data, 1950–2024.
 - **LOCA2** - [Pierce et al., UCSD](https://loca.ucsd.edu/loca-version-2-for-north-america-ca-jan-2023/). CMIP6 statistically downscaled to ~6 km. Historical: 1950–2014; projections: 2015–2065 under SSP2-4.5 and SSP5-8.5.
 - **NPS boundaries** - [National Parks boundaries](https://geodata.bts.gov/datasets/national-parks/explore) via the Bureau of Transportation Statistics.
 
