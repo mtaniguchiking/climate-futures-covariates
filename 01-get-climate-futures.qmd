@@ -126,9 +126,8 @@ classify_future <- function(tas, pr, q_tas, q_pr) {
   ))))
 }
 
-classified_df <- transform(anomaly_df,
-  climate_future = classify_future(tas, pr, q_tas, q_pr)
-)
+classified_df <- anomaly_df
+classified_df$climate_future <- classify_future(anomaly_df$tas, anomaly_df$pr, q_tas, q_pr)
 
 table(classified_df$climate_future)
 ```
@@ -149,8 +148,8 @@ future_colors <- c(
 med_tas <- q_tas["50%"]
 med_pr  <- q_pr["50%"]
 
-ssp245_df <- subset(classified_df, scenario == "ssp245")
-ssp585_df <- subset(classified_df, scenario == "ssp585")
+ssp245_df <- classified_df[classified_df$scenario == "ssp245", ]
+ssp585_df <- classified_df[classified_df$scenario == "ssp585", ]
 
 ggplot(classified_df, aes(x = tas, y = pr)) +
   # Quadrant background shading (anchored to ensemble medians)
@@ -209,7 +208,7 @@ ggplot(classified_df, aes(x = tas, y = pr)) +
 Finally, we filter to the selected climate futures and write the CSV.
 
 ```{r export-csv}
-output_df <- subset(classified_df, climate_future %in% selected_futures)
+output_df <- classified_df[classified_df$climate_future %in% selected_futures, ]
 output_df <- output_df[order(output_df$climate_future, output_df$model), ]
 
 # Capitalise first letter of label (e.g. "warm-wet" → "Warm-wet")
