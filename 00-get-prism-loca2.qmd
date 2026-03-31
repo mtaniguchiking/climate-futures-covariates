@@ -22,6 +22,8 @@ format: html
 
 -   Outputs are saved in `data/<park_code>/processed/...`
 
+-   If you are running this notebook on an NPS network, you may run into issues downloading the LOCA2 data. If this happens, try running on a non-NPS network.
+
 ## User Config
 
 ```{r user-config}
