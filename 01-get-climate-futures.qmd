@@ -10,9 +10,10 @@ format: html
 1.  Customize the `User Config` code block
 
     -   The `selected_futures` var can be selected to align with CCRP park-specific futures or simply based on user interest. CCRP park-specific futures have been defined in the park's respective [Climate Futures Summaries](https://www.nps.gov/subjects/climatechange/climatefutures.htm) report (click "Open this panel to choose your park report," then select your park of interest on the website)
+    -   The `single_model_per_future` toggle determines the set of models that are saved. `TRUE` saves a single, representative model for each selected future, while `FALSE` saves all models in each selected future.
     -   The `..._start` and `..._end` year vars are loosely based on the CCRP Climate Futures [methods report](https://irma.nps.gov/DataStore/FileSource/Get?id=2302720&filename=2302720.html). The default ranges should be appropriate for most cases, but feel free to change as needed
 
-2.  If you'd like, examine the quadrant plot and model members of the selected climate futures
+2.  Examine the quadrant plot and model members of the selected climate futures
 
 **Notes**
 
