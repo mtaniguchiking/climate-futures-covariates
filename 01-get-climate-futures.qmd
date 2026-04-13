@@ -28,6 +28,11 @@ park_code <- "CANY"
 # Options: "warm-wet", "warm-dry", "hot-dry", "hot-wet", "central"
 selected_futures <- c("warm-wet", "hot-dry")
 
+# ── Model selection (CUSTOMIZE) ───────────────────────────────────────────────
+# TRUE  = save one model per future (the medoid, aka closest to quadrant centroid)
+# FALSE = save all models in each selected future (default)
+single_model_per_future <- FALSE
+
 # ── Time periods for anomaly calculation (CUSTOMIZE) ──────────────────────────
 # customize these or leave them as is
 # baseline/historical period 
@@ -132,6 +137,30 @@ classified_df$climate_future <- classify_future(anomaly_df$tas, anomaly_df$pr, q
 table(classified_df$climate_future)
 ```
 
+## Select Representative Models
+
+```{r select-representatives}
+# IQR normalization factors — consistent with how quadrant boundaries are defined
+iqr_tas <- q_tas["75%"] - q_tas["25%"]
+iqr_pr  <- q_pr["75%"]  - q_pr["25%"]
+
+# Return the single row closest to the quadrant centroid in IQR-normalized space
+select_medoid <- function(df) {
+  centroid_tas <- mean(df$tas)
+  centroid_pr  <- mean(df$pr)
+  d <- sqrt(((df$tas - centroid_tas) / iqr_tas)^2 +
+            ((df$pr  - centroid_pr)  / iqr_pr)^2)
+  df[which.min(d), ]
+}
+
+representative_df <- if (single_model_per_future) {
+  futures_subset <- classified_df[classified_df$climate_future %in% selected_futures, ]
+  do.call(rbind, lapply(split(futures_subset, futures_subset$climate_future), select_medoid))
+} else {
+  NULL
+}
+```
+
 ## Quadrant Plot
 
 ```{r quadrant-plot}
@@ -186,8 +215,17 @@ ggplot(classified_df, aes(x = tas, y = pr)) +
            hjust = 1.1,  vjust = 1.4, color = "gray30", fontface = "bold", size = 3.5) +
   annotate("text", x = Inf,  y = -Inf, label = "Hot\u2013Dry",
            hjust = 1.1,  vjust = -0.4, color = "gray30", fontface = "bold", size = 3.5) +
+  # Hollow ring around the selected (medoid) model — lets the colored dot show through
+  { if (!is.null(representative_df))
+      geom_point(data = representative_df,
+                 aes(x = tas, y = pr, shape = "Selected model"),
+                 color = "black", fill = NA, size = 5.5, stroke = 1.5)
+    else list() } +
   scale_fill_manual(values = future_colors, name = "Climate future") +
   scale_color_manual(values = future_colors, guide = "none") +
+  { if (!is.null(representative_df))
+      scale_shape_manual(values = c("Selected model" = 21), name = NULL)
+    else list() } +
   scale_x_continuous(expand = expansion(mult = 0.12)) +
   scale_y_continuous(expand = expansion(mult = 0.12)) +
   labs(
@@ -208,7 +246,11 @@ ggplot(classified_df, aes(x = tas, y = pr)) +
 Finally, we filter to the selected climate futures and write the CSV.
 
 ```{r export-csv}
-output_df <- classified_df[classified_df$climate_future %in% selected_futures, ]
+output_df <- if (single_model_per_future) {
+  representative_df
+} else {
+  classified_df[classified_df$climate_future %in% selected_futures, ]
+}
 output_df <- output_df[order(output_df$climate_future, output_df$model), ]
 
 # Capitalise first letter of label (e.g. "warm-wet" → "Warm-wet")
