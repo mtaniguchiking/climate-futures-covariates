@@ -36,6 +36,12 @@ park_code <- "CANY"
 # options: "cent", "e_n_cent", "n_east", "n_west", "s_east", "s_west", "south",
 #          "w_n_cent", "west", "west105"
 loca2_region <- "s_west"
+
+# ── Keep raw downloads (CUSTOMIZE) ───────────────────────────────────────────
+# TRUE  → raw PRISM/LOCA2 files are kept in data/raw/ after processing and
+#         reused on subsequent runs (skips re-downloads).
+# FALSE → raw files are deleted after processing to save disk space
+keep_raw_downloads <- TRUE
 ```
 
 ## Setup
@@ -50,11 +56,12 @@ library(httr)
 
 NPS_BOUNDARY_SHP <- "data/nps_boundaries/nps_boundary.shp"
 
-# output paths
-raw_dir <- file.path("data", park_code, "raw")
+# shared raw dirs (national PRISM and regional LOCA2 are reused across parks)
+raw_dir      <- file.path("data", "raw")
 prism_dl_dir <- file.path(raw_dir, "prism")
-loca2_dl_dir <- file.path(raw_dir, "loca2")
-out_dir <- file.path("data", park_code, "processed")
+loca2_dl_dir <- file.path(raw_dir, "loca2", loca2_region)
+# per-park output dirs
+out_dir   <- file.path("data", park_code, "processed")
 loca2_out <- file.path(out_dir, "loca2")
 
 for (d in c(prism_dl_dir, loca2_dl_dir, loca2_out)) dir.create(d, recursive = TRUE, showWarnings = FALSE)
@@ -144,14 +151,19 @@ We can download PRISM annual rasters (ppt and tmax) via the `prism` R package to
 
 ```{r prism-download}
 #| warning: false
-prism_set_dl_dir(prism_dl_dir)
+ppt_cached  <- length(list.files(prism_dl_dir, pattern = "prism_ppt.*\\.bil$",  recursive = TRUE))
+tmax_cached <- length(list.files(prism_dl_dir, pattern = "prism_tmax.*\\.bil$", recursive = TRUE))
 
-invisible(capture.output(suppressMessages({
-  get_prism_annual("ppt",  years = PRISM_YEARS, keepZip = FALSE)
-  get_prism_annual("tmax", years = PRISM_YEARS, keepZip = FALSE)
-})))
-
-message("Downloaded PRISM ppt + tmax (", min(PRISM_YEARS), "–", max(PRISM_YEARS), ")")
+if (ppt_cached >= length(PRISM_YEARS) && tmax_cached >= length(PRISM_YEARS)) {
+  message("Skipping PRISM download — cached data found in ", prism_dl_dir)
+} else {
+  prism_set_dl_dir(prism_dl_dir)
+  invisible(capture.output(suppressMessages({
+    get_prism_annual("ppt",  years = PRISM_YEARS, keepZip = FALSE)
+    get_prism_annual("tmax", years = PRISM_YEARS, keepZip = FALSE)
+  })))
+  message("Downloaded PRISM ppt + tmax (", min(PRISM_YEARS), "–", max(PRISM_YEARS), ")")
+}
 ```
 
 ### Standardize + Crop
@@ -195,8 +207,12 @@ message("Wrote prism_pr.nc and prism_tasmax.nc")
 ### Clean Up Raw PRISM
 
 ```{r prism-cleanup}
-unlink(prism_dl_dir, recursive = TRUE)
-message("Removed raw PRISM downloads")
+if (keep_raw_downloads) {
+  message("Keeping raw PRISM downloads in ", prism_dl_dir)
+} else {
+  unlink(prism_dl_dir, recursive = TRUE)
+  message("Removed raw PRISM downloads")
+}
 ```
 
 ## LOCA2
@@ -239,12 +255,17 @@ for (model in LOCA2_MODELS) {
   for (scenario in LOCA2_SCENARIOS) {
     for (date_range in LOCA2_DATE_RANGES[[scenario]]) {
       for (variable in c("pr", "tasmax")) {
+        dest_dir <- file.path(loca2_dl_dir, model, scenario, variable)
+        # skip HTTP listing if a file matching this date_range is already cached
+        if (length(list.files(dest_dir, pattern = date_range)) > 0) {
+          message("[skip-cached] ", model, "/", scenario, "/", variable, "/", date_range)
+          next
+        }
         found <- find_loca2_file(model, scenario, variable, date_range)
         if (is.null(found)) {
           message("[skip] ", model, "/", scenario, "/", variable, "/", date_range, " — not found")
           next
         }
-        dest_dir  <- file.path(loca2_dl_dir, model, scenario, variable)
         dir.create(dest_dir, recursive = TRUE, showWarnings = FALSE)
         dest_file <- file.path(dest_dir, found$file)
         dl_url    <- paste0(found$url, found$file)
@@ -337,6 +358,10 @@ for (model in LOCA2_MODELS) {
 ### Clean Up Raw LOCA2
 
 ```{r loca2-cleanup}
-unlink(loca2_dl_dir, recursive = TRUE)
-message("Removed raw LOCA2 downloads")
+if (keep_raw_downloads) {
+  message("Keeping raw LOCA2 downloads in ", loca2_dl_dir)
+} else {
+  unlink(loca2_dl_dir, recursive = TRUE)
+  message("Removed raw LOCA2 downloads")
+}
 ```
