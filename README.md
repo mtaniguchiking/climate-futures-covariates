@@ -70,7 +70,7 @@ Downloads raw climate data, crops and masks everything to a specified park bound
 - **PRISM** - 4 km annual observed data (ppt in mm/yr, tmax in °C), 1950–2024, downloaded via the `prism` R package
 - **LOCA2** - 6 km CMIP6 downscaled projections (ppt and tasmax), 1950–2065, pulled directly from the UCSD server. Covers 20 models × 2 scenarios (SSP2-4.5 and SSP5-8.5).
 
-**User config:** `park_code`
+**User config:** `park_code`, `keep_raw_downloads`
 
 **Outputs:**
 - `data/<park_code>/processed/prism_pr.nc`
@@ -88,7 +88,7 @@ Takes the processed NetCDFs and classifies each of the 40 model/scenario runs in
 
 You pick which futures you want to carry forward (e.g. "warm-wet" and "hot-dry"). Park-specific recommended futures can be found in the [NPS Climate Futures Summaries](https://www.nps.gov/subjects/climatechange/climatefutures.htm).
 
-**User config:** `park_code`, `selected_futures`, `baseline_start/end`, `midcent_start/end`
+**User config:** `park_code`, `selected_futures`, `single_model_per_future`, `baseline_start/end`, `midcent_start/end`
 
 **Outputs:**
 - `data/<park_code>/climate-futures-models.csv` - the selected model/scenario members per future label
