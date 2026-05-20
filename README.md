@@ -134,11 +134,9 @@ The main output-generating notebook. Takes the processed climate data and your M
 
 | column | description |
 |---|---|
-| `scenario_id` | integer ID for the climate future |
-| `scenario_name` | climate future label (e.g. `Hot-dry`) |
-| `model_run_id` | integer ID for the model member |
-| `model_run_name` | model + scenario string (e.g. `CNRM-CM6-1 ssp585`) |
 | `<unit_code_col>` | NPS unit code |
+| `scenario` | climate future label (e.g. `Hot-dry`) |
+| `model_run` | model + scenario string (e.g. `CNRM-CM6-1 ssp585`) |
 | `<site_id_col>` | site identifier |
 | `<stratum_col>` | stratum label |
 | `<year_col>` | year |
@@ -171,7 +169,7 @@ additional covariates:
 time effect: disabled # recommended for forecasting
 ```
 
-- **`forecast_output_csv`** - use this as the forecast driver input. The `scenario_name` and `model_run_name` columns correspond to the climate future and individual model run. I also recommend copying/moving this file into your M4MD repo `assets/_data/`. Then, you can update the following key-value pairs in your forecast config YAML in `M4MD/forecasting/forecast`: 
+- **`forecast_output_csv`** - use this as the forecast driver input. The `scenario` and `model_run` columns correspond to the climate future and individual model run. I also recommend copying/moving this file into your M4MD repo `assets/_data/`. Then, you can update the following key-value pairs in your forecast config YAML in `M4MD/forecasting/forecast`: 
 
 ```
 scenarios_file: assets/_data/<forecast_output_csv>.csv
