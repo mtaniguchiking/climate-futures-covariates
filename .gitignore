@@ -8,6 +8,7 @@ output/
 # Park-specific data (downloaded by notebooks)
 data/*
 !data/nps_boundaries/
+!data/livneh
 data/nps_boundaries/*.xml
 
 # GDAL sidecar files
