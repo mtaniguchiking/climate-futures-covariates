@@ -1,9 +1,9 @@
 ---
-title: "Plot PRISM + LOCA2"
+title: "Plot Livneh + LOCA2"
 format: html
 ---
 
-*This Quarto doc takes in processed PRISM + CMIP6 LOCA2 data. For a given park code and its specific climate futures model members (via `01-get-climate-futures.qmd`), it provides a few temporal and spatial EDA plots.*
+*This Quarto doc takes in processed Livneh + CMIP6 LOCA2 data. For a given park code and its specific climate futures model members (via `01-get-climate-futures.qmd`), it provides a few temporal and spatial plots.*
 
 **User steps**
 
@@ -20,11 +20,11 @@ format: html
 park_code <- "CANY"
 
 # ── Time ranges (CUSTOMIZE) ───────────────────────────────────────────────────
-# PRISM historical data range: 1950-2024
+# Livneh historical data range: 1950-2018
 # LOCA2 projection data range: 2015-2065
 hist_start <- 1994  # start of historical plot window
-hist_end <- 2024  # end of historical plot window
-future_start <- 2025  # start of future plot window
+hist_end <- 2018  # end of historical plot window
+future_start <- 2018  # start of future plot window
 future_end <- 2045  # end of future plot window
 ```
 
@@ -43,9 +43,9 @@ NPS_BOUNDARY_SHP <- "data/nps_boundaries/nps_boundary.shp"
 # (feel free to ignore these constants, they're set to match the processed data)
 CLIMATE_DATA_DIR    <- file.path("data", park_code, "processed")
 CLIMATE_FUTURES_CSV <- file.path("data", park_code, "climate-futures-models.csv")
-PRISM_PR_NC <- file.path(CLIMATE_DATA_DIR, "prism_pr.nc")
-PRISM_TASMAX_NC  <- file.path(CLIMATE_DATA_DIR, "prism_tasmax.nc")
-PRISM_YEARS <- 1950:2024
+LIVNEH_PR_NC <- file.path(CLIMATE_DATA_DIR, "livneh", "livneh_pr.nc")
+LIVNEH_TASMAX_NC  <- file.path(CLIMATE_DATA_DIR, "livneh", "livneh_tasmax.nc")
+LIVNEH_YEARS <- 1950:2018
 LOCA2_SCEN_YEARS <- list(historical = 1950:2014, ssp245 = 2015:2065, ssp585 = 2015:2065)
 ```
 
@@ -83,33 +83,33 @@ scenarios  <- setNames(
 
 # assign plot colours
 .pal <- c("steelblue", "tomato", "forestgreen", "darkorange", "purple")
-group_colors <- c("PRISM" = "black",
+group_colors <- c("Livneh" = "black",
                   setNames(.pal[seq_along(scenarios)], names(scenarios)))
 roll_n <- 10 # rolling average window in years (for timeseries plots)
 ```
 
 ## Load Data
 
-Now we load the PRISM + LOCA2 data using the helpers defined above.
+Now we load the Livneh + LOCA2 data using the helpers defined above.
 
-### PRISM
+### Livneh
 
-```{r load-prism}
+```{r load-livneh}
 #| message: false
-hist_mask <- PRISM_YEARS >= hist_start & PRISM_YEARS <= hist_end
+hist_mask <- LIVNEH_YEARS >= hist_start & LIVNEH_YEARS <= hist_end
 
-prism_ppt_r  <- rast(PRISM_PR_NC)
-prism_tmax_r <- rast(PRISM_TASMAX_NC)
+livneh_ppt_r  <- rast(LIVNEH_PR_NC)
+livneh_tmax_r <- rast(LIVNEH_TASMAX_NC)
 
-prism_ppt_df <- data.frame(year   = PRISM_YEARS[hist_mask],
-                           value  = extract_ts_mean(prism_ppt_r[[hist_mask]]),
-                           source = "PRISM")
-prism_tmax_df <- data.frame(year   = PRISM_YEARS[hist_mask],
-                            value  = extract_ts_mean(prism_tmax_r[[hist_mask]]),
-                            source = "PRISM")
+livneh_ppt_df <- data.frame(year   = LIVNEH_YEARS[hist_mask],
+                           value  = extract_ts_mean(livneh_ppt_r[[hist_mask]]),
+                           source = "Livneh")
+livneh_tmax_df <- data.frame(year   = LIVNEH_YEARS[hist_mask],
+                            value  = extract_ts_mean(livneh_tmax_r[[hist_mask]]),
+                            source = "Livneh")
 
-prism_ppt_rast  <- extract_spatial_mean(prism_ppt_r[[hist_mask]])
-prism_tmax_rast <- extract_spatial_mean(prism_tmax_r[[hist_mask]])
+livneh_ppt_rast  <- extract_spatial_mean(livneh_ppt_r[[hist_mask]])
+livneh_tmax_rast <- extract_spatial_mean(livneh_tmax_r[[hist_mask]])
 ```
 
 ### LOCA2
@@ -157,13 +157,13 @@ loca2_tmax_rasts <- lapply(scenarios, load_loca2_rast, variable = "tasmax")
 
 ## Time-Series Plots
 
-If the sanity check looks good, we can take a look at some timeseries plots.
+Now we can take a look at some timeseries plots.
 
 ```{r ts-helper}
-make_ts_plot <- function(prism_df, loca2_df, y_label, title) {
-  plot_df        <- rbind(prism_df, loca2_df)
+make_ts_plot <- function(livneh_df, loca2_df, y_label, title) {
+  plot_df        <- rbind(livneh_df, loca2_df)
   plot_df$source <- factor(plot_df$source,
-                            levels = c("PRISM", names(scenarios)))
+                            levels = c("Livneh", names(scenarios)))
 
   # Compute centred rolling mean per source group
   roll_df <- do.call(rbind, lapply(split(plot_df, plot_df$source), function(d) {
@@ -185,13 +185,13 @@ make_ts_plot <- function(prism_df, loca2_df, y_label, title) {
 ```
 
 ```{r ts-ppt}
-make_ts_plot(prism_ppt_df, loca2_ppt_df,
+make_ts_plot(livneh_ppt_df, loca2_ppt_df,
              y_label = "Mean Annual Precipitation (mm/yr)",
              title   = paste("Annual Precipitation –", park_name))
 ```
 
 ```{r ts-tmax}
-make_ts_plot(prism_tmax_df, loca2_tmax_df,
+make_ts_plot(livneh_tmax_df, loca2_tmax_df,
              y_label = "Mean Annual Max Temperature (°C)",
              title   = paste("Annual Max Temperature –", park_name))
 ```
@@ -201,48 +201,48 @@ make_ts_plot(prism_tmax_df, loca2_tmax_df,
 And finally some spatial plots.
 
 ```{r spatial-helper}
-# prism_rast  : single-layer SpatRaster (PRISM baseline, native resolution)
+# livneh_rast : single-layer SpatRaster (Livneh baseline, native resolution)
 # group_rasts : named list of single-layer SpatRasters (one per scenario group)
 # anom_fn     : function(future_rast, baseline_rast) -> anomaly SpatRaster
-spatial_panels <- function(prism_rast, group_rasts,
+spatial_panels <- function(livneh_rast, group_rasts,
                             base_palette, base_name,
                             anom_palette, anom_direction, anom_name,
                             anom_fn, title) {
-  # Reproject PRISM baseline to LOCA2 grid for anomaly calculation
-  prism_resampled <- project(prism_rast, group_rasts[[1]], method = "near")
-  anom_rasts <- lapply(group_rasts, function(gr) anom_fn(gr, prism_resampled))
+  # Reproject Livneh baseline to LOCA2 grid for anomaly calculation
+  livneh_resampled <- project(livneh_rast, group_rasts[[1]], method = "near")
+  anom_rasts <- lapply(group_rasts, function(gr) anom_fn(gr, livneh_resampled))
   anom_lim   <- max(abs(unlist(lapply(anom_rasts, function(r) values(r, na.rm = TRUE)))),
                     na.rm = TRUE)
 
-  cany_vect  <- vect(boundary_wgs84)
-  cany_prism <- project(cany_vect, prism_rast)
-  cany_loca2 <- project(cany_vect, group_rasts[[1]])
+  boundary_vect  <- vect(boundary_wgs84)
+  boundary_livneh <- project(boundary_vect, livneh_rast)
+  boundary_loca2 <- project(boundary_vect, group_rasts[[1]])
 
-  # Use PRISM extent for all panels so tiny parks don't get squashed aspect ratios
-  map_xlim <- c(xmin(prism_rast), xmax(prism_rast))
-  map_ylim <- c(ymin(prism_rast), ymax(prism_rast))
+  # Use Livneh extent for all panels so tiny parks don't get squashed aspect ratios
+  map_xlim <- c(xmin(livneh_rast), xmax(livneh_rast))
+  map_ylim <- c(ymin(livneh_rast), ymax(livneh_rast))
 
   theme_map <- theme_void() +
     theme(legend.position = "bottom",
           plot.title = element_text(hjust = 0.5, size = 10))
 
   p_base <- ggplot() +
-    geom_spatraster(data = prism_rast) +
-    geom_spatvector(data = cany_prism, fill = NA, color = "white", linewidth = 0.4) +
+    geom_spatraster(data = livneh_rast) +
+    geom_spatvector(data = boundary_livneh, fill = NA, color = "white", linewidth = 0.4) +
     scale_fill_distiller(palette = base_palette, direction = 1,
                          na.value = NA, name = base_name) +
-    labs(title = paste0("PRISM mean\n(", hist_start, "–", hist_end, ")")) +
+    labs(title = paste0("Livneh mean\n(", hist_start, "–", hist_end, ")")) +
     coord_sf(xlim = map_xlim, ylim = map_ylim, expand = FALSE) +
     theme_map
 
   make_anom_panel <- function(r, group_label) {
     ggplot() +
       geom_spatraster(data = r) +
-      geom_spatvector(data = cany_loca2, fill = NA, color = "white", linewidth = 0.4) +
+      geom_spatvector(data = boundary_loca2, fill = NA, color = "white", linewidth = 0.4) +
       scale_fill_distiller(palette = anom_palette, direction = anom_direction,
                            limits = c(-anom_lim, anom_lim),
                            na.value = NA, name = anom_name) +
-      labs(title = paste0(group_label, "\nvs PRISM (",
+      labs(title = paste0(group_label, "\nvs Livneh (",
                           future_start, "–", future_end, ")")) +
       coord_sf(xlim = map_xlim, ylim = map_ylim, expand = FALSE) +
       theme_map
@@ -261,7 +261,7 @@ spatial_panels <- function(prism_rast, group_rasts,
 #| fig-width: 10
 #| fig-height: 4
 spatial_panels(
-  prism_ppt_rast, loca2_ppt_rasts,
+  livneh_ppt_rast, loca2_ppt_rasts,
   base_palette   = "Blues",  base_name      = "mm/yr",
   anom_palette   = "BrBG",   anom_direction = 1,  anom_name = "% change",
   anom_fn        = function(fut, base) (fut - base) / base * 100,
@@ -273,7 +273,7 @@ spatial_panels(
 #| fig-width: 10
 #| fig-height: 4
 spatial_panels(
-  prism_tmax_rast, loca2_tmax_rasts,
+  livneh_tmax_rast, loca2_tmax_rasts,
   base_palette   = "YlOrRd", base_name      = "°C",
   anom_palette   = "RdBu",   anom_direction = -1, anom_name = "Δ°C",
   anom_fn        = function(fut, base) fut - base,

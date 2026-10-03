@@ -1,12 +1,12 @@
 ---
-title: "00 — Get PRISM + LOCA2"
+title: "00 — Get Livneh + LOCA2"
 format: html
 ---
 
-*This Quarto doc downloads and standardizes two sources of climate data:*
+*This Quarto doc uses two sources of climate data:*
 
--   *PRISM: (4 km annual, 1950–2024) via the [`prism`](https://cran.r-project.org/package=prism) R package*
--   *LOCA2: (CMIP6 downscaled to 6km, 1950–2065) directly from the [UCSD server](https://loca.ucsd.edu/loca-version-2-for-north-america-ca-jan-2023/)*
+-   *Historical: A revised version of the* Livneh et al. data. This data has been pre-processed and is included in this repo.
+-   *Future: A CMIP6 dataset downscaled via LOCA2. This data is downloaded via a [UCSD server](https://loca.ucsd.edu/loca-version-2-for-north-america-ca-jan-2023/).*
 
 *Both sources are cropped and masked to a user-defined park boundary, then written to NetCDF files for the following, downstream QMDs.*
 
@@ -18,9 +18,9 @@ format: html
 
 **Notes**
 
--   Running this notebook will likely take several minutes. Based on testing, runtime seems to vary between runs (perhaps from external server response time). Tests with `park_code <- "CANY"` took my computer 5-10 minutes to render.
+-   Running this notebook will likely take several minutes. Based on testing, runtime can vary (perhaps from external server response time). Tests with `park_code <- "CANY"` took my computer 5-10 minutes to render.
 
--   Outputs are saved in `data/<park_code>/processed/...`
+-   Outputs are saved in `data/<park_code>/processed/...` (and optionally `data/<park_code>/raw/...` ).
 
 -   If you are running this notebook on an NPS network, you may run into issues downloading the LOCA2 data. If this happens, try running on a non-NPS network.
 
@@ -28,19 +28,19 @@ format: html
 
 ```{r user-config}
 # ── Park identifier (CUSTOMIZE) ───────────────────────────────────────────────
-# a 4-letter NPS unit code (e.g. "CANY", "YELL", "GRCA")
+# a 4-letter NPS unit code (e.g. "CANY", "JOTR", "YOSE")
 park_code <- "CANY"
 
-# ── LOCA2 region (CUSTOMIZE if park is outside the southwest) ─────────────────
+# ── Climate region (CUSTOMIZE) ────────────────────────────────────────────────
 # see map: https://loca.ucsd.edu/wp-content/uploads/2023/08/plot_reg.R-768x481.png
 # options: "cent", "e_n_cent", "n_east", "n_west", "s_east", "s_west", "south",
 #          "w_n_cent", "west", "west105"
-loca2_region <- "s_west"
+climate_region <- "s_west"
 
 # ── Keep raw downloads (CUSTOMIZE) ───────────────────────────────────────────
-# TRUE  → raw PRISM/LOCA2 files are kept in data/raw/ after processing and
+# TRUE  = raw LOCA2 files are kept in data/raw/ after processing and
 #         reused on subsequent runs (skips re-downloads).
-# FALSE → raw files are deleted after processing to save disk space
+# FALSE = raw files are deleted after processing to save disk space
 keep_raw_downloads <- TRUE
 ```
 
@@ -51,23 +51,23 @@ keep_raw_downloads <- TRUE
 library(terra)
 library(sf)
 library(ggplot2)
-library(prism)
 library(httr)
 
 NPS_BOUNDARY_SHP <- "data/nps_boundaries/nps_boundary.shp"
+LIVNEH_DATA_DIR  <- file.path("data", "livneh")
 
-# shared raw dirs (national PRISM and regional LOCA2 are reused across parks)
+# shared raw dir (regional LOCA2 downloads are reused across parks)
 raw_dir      <- file.path("data", "raw")
-prism_dl_dir <- file.path(raw_dir, "prism")
-loca2_dl_dir <- file.path(raw_dir, "loca2", loca2_region)
+loca2_dl_dir <- file.path(raw_dir, "loca2", climate_region)
 # per-park output dirs
-out_dir   <- file.path("data", park_code, "processed")
-loca2_out <- file.path(out_dir, "loca2")
+out_dir    <- file.path("data", park_code, "processed")
+livneh_out <- file.path(out_dir, "livneh")
+loca2_out  <- file.path(out_dir, "loca2")
 
-for (d in c(prism_dl_dir, loca2_dl_dir, loca2_out)) dir.create(d, recursive = TRUE, showWarnings = FALSE)
+for (d in c(livneh_out, loca2_dl_dir, loca2_out)) dir.create(d, recursive = TRUE, showWarnings = FALSE)
 
 # constants (leave these unchanged)
-PRISM_YEARS     <- 1950:2024
+LIVNEH_YEARS    <- 1950:2018
 LOCA2_YEARS     <- 1950:2065
 LOCA2_SCENARIOS <- c("ssp245", "ssp585")
 LOCA2_MODELS <- c(
@@ -95,10 +95,7 @@ LOCA2_ENSEMBLES <- c(
 LOCA2_BASE_URL <- "https://cirrus.ucsd.edu/~pierce/LOCA2/CONUS_regions_split"
 LOCA2_RES <- "0p0625deg"
 
-LOCA2_DATE_RANGES <- list(
-  ssp245 = c("2015-2044", "2045-2074"),
-  ssp585 = c("2015-2044", "2045-2074")
-)
+LOCA2_DATE_RANGES <- c("2015-2044", "2045-2074")
 
 PR_TO_MM_YR <- 86400 * 365.25 # kg m-2 s-1 -> mm yr-1
 K_TO_C <- -273.15 # K -> degC
@@ -143,76 +140,27 @@ ggplot() +
   theme_minimal()
 ```
 
-## PRISM
+## Historical Livneh Dataset
 
-### Download
+This data is pre-built (see `build-livneh-regions.R`) into one file per LOCA2 climate region. Here, we read the region matching `climate_region`, then crop and mask it to the park boundary.
 
-We can download PRISM annual rasters (ppt and tmax) via the `prism` R package to the raw directory.
-
-```{r prism-download}
-#| warning: false
-ppt_cached  <- length(list.files(prism_dl_dir, pattern = "prism_ppt.*\\.bil$",  recursive = TRUE))
-tmax_cached <- length(list.files(prism_dl_dir, pattern = "prism_tmax.*\\.bil$", recursive = TRUE))
-
-if (ppt_cached >= length(PRISM_YEARS) && tmax_cached >= length(PRISM_YEARS)) {
-  message("Skipping PRISM download — cached data found in ", prism_dl_dir)
-} else {
-  prism_set_dl_dir(prism_dl_dir)
-  invisible(capture.output(suppressMessages({
-    get_prism_annual("ppt",  years = PRISM_YEARS, keepZip = FALSE)
-    get_prism_annual("tmax", years = PRISM_YEARS, keepZip = FALSE)
-  })))
-  message("Downloaded PRISM ppt + tmax (", min(PRISM_YEARS), "–", max(PRISM_YEARS), ")")
-}
-```
-
-### Standardize + Crop
-
-Now we stack all years for each variable, crop and mask to the boundary, convert units, and write to `prism.nc`.
-
-```{r prism-standardize}
+```{r livneh-historical}
 #| message: false
+# LOCA2 also serves a "west105" folder (a separate resolution of the same
+# west region); Livneh only has one file for it, named "west".
+livneh_region <- if (climate_region == "west105") "west" else climate_region
 
-# (helper) load one variable for all years as a SpatRaster, crop to boundary
-load_prism_var <- function(type) {
-  bil_paths <- sort(list.files(prism_dl_dir,
-                               pattern   = paste0("prism_", type, ".*\\.bil$"),
-                               recursive = TRUE, full.names = TRUE,
-                               ignore.case = TRUE))
-  if (!length(bil_paths)) {
-    # check whether the server returned rate-limit error text files instead
-    txt_files <- list.files(prism_dl_dir,
-                            pattern = paste0("prism_", type, ".*\\.txt$"),
-                            full.names = TRUE)
-    if (length(txt_files)) {
-      stop("PRISM download was rate-limited by the server. ",
-           "Delete data/", park_code, "/raw/prism/ and wait 24 hours before re-running.")
-    }
-    stop("No PRISM .bil files found for type: ", type)
-  }
-  r  <- rast(bil_paths)
-  bv <- project(boundary_vect, crs(r))
-  crop(mask(r, bv, touches = TRUE), bv, snap = "out")
-}
+livneh_pr_r     <- rast(file.path(LIVNEH_DATA_DIR, paste0(livneh_region, "_pr.nc")))
+livneh_tasmax_r <- rast(file.path(LIVNEH_DATA_DIR, paste0(livneh_region, "_tasmax.nc")))
 
-prism_pr     <- load_prism_var("ppt") # already mm/yr
-prism_tasmax <- load_prism_var("tmax") # already degC
+bv <- project(boundary_vect, crs(livneh_pr_r))
+livneh_pr     <- crop(mask(livneh_pr_r, bv, touches = TRUE), bv, snap = "out") # mm/yr
+livneh_tasmax <- crop(mask(livneh_tasmax_r, bv, touches = TRUE), bv, snap = "out") # degC
 
-suppressWarnings(writeRaster(prism_pr, file.path(out_dir, "prism_pr.nc"), filetype = "netCDF", overwrite = TRUE))
-suppressWarnings(writeRaster(prism_tasmax, file.path(out_dir, "prism_tasmax.nc"), filetype = "netCDF", overwrite = TRUE))
+suppressWarnings(writeRaster(livneh_pr, file.path(livneh_out, "livneh_pr.nc"), filetype = "netCDF", overwrite = TRUE))
+suppressWarnings(writeRaster(livneh_tasmax, file.path(livneh_out, "livneh_tasmax.nc"), filetype = "netCDF", overwrite = TRUE))
 
-message("Wrote prism_pr.nc and prism_tasmax.nc")
-```
-
-### Clean Up Raw PRISM
-
-```{r prism-cleanup}
-if (keep_raw_downloads) {
-  message("Keeping raw PRISM downloads in ", prism_dl_dir)
-} else {
-  unlink(prism_dl_dir, recursive = TRUE)
-  message("Removed raw PRISM downloads")
-}
+message("Wrote livneh_pr.nc and livneh_tasmax.nc")
 ```
 
 ## LOCA2
@@ -235,7 +183,7 @@ list_loca2_dir <- function(url) {
 # return the best matching filename for a model/scenario/variable/date_range.
 find_loca2_file <- function(model, scenario, variable, date_range) {
   ensemble <- LOCA2_ENSEMBLES[[model]]
-  url <- paste(LOCA2_BASE_URL, model, loca2_region, LOCA2_RES,
+  url <- paste(LOCA2_BASE_URL, model, climate_region, LOCA2_RES,
                ensemble, scenario, variable, "", sep = "/")
   files <- list_loca2_dir(url)
   cands <- files[grepl(date_range, files, fixed = TRUE) & grepl("\\.nc$", files)]
@@ -253,7 +201,7 @@ find_loca2_file <- function(model, scenario, variable, date_range) {
 #| message: false
 for (model in LOCA2_MODELS) {
   for (scenario in LOCA2_SCENARIOS) {
-    for (date_range in LOCA2_DATE_RANGES[[scenario]]) {
+    for (date_range in LOCA2_DATE_RANGES) {
       for (variable in c("pr", "tasmax")) {
         dest_dir <- file.path(loca2_dl_dir, model, scenario, variable)
         # skip HTTP listing if a file matching this date_range is already cached

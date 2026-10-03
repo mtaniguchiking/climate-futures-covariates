@@ -3,7 +3,7 @@ title: "Prepare Climate Covariates for M4MD"
 format: html
 ---
 
-*This Quarto doc takes in processed PRISM + CMIP6 LOCA2 data, and M4MD response variable and plot locations CSVs. It outputs a covariate CSV (precip and/or temp) suitable as covariate inputs to the [M4MD pipeline](https://lzachmann.github.io/models-for-missing-data/). It also outputs a CSV of future climate scenarios suitable for input to the M4MD forecasting pipeline.*
+*This Quarto doc takes in processed Livneh + CMIP6 LOCA2 data, and M4MD response variable and plot locations CSVs. It outputs a covariate CSV (precip and/or temp) suitable as covariate inputs to the [M4MD pipeline](https://lzachmann.github.io/models-for-missing-data/). It also outputs a CSV of future climate scenarios suitable for input to the M4MD forecasting pipeline.*
 
 **User steps**
 
@@ -29,8 +29,8 @@ format: html
 park_code <- "CANY"
 
 # ── Input paths (CUSTOMIZE) ───────────────────────────────────────────────────
-response_csv <- "/M4MD/assets/_data/cany-ricegrass-cover.csv"
-site_locations_csv <- "/M4MD/assets/_data/cany-plot-locs.csv"
+response_csv <- "~/Documents/FA26/M4MD/assets/_data/cany-ricegrass-cover.csv"
+site_locations_csv <- "~/Documents/FA26/M4MD/assets/_data/cany-plot-locs.csv"
 
 # ── Column names (CUSTOMIZE) ──────────────────────────────────────────────────
 # these should match the column names used in the response csv
@@ -46,8 +46,7 @@ ycoord_col <- "y_coord" # northing / latitude column
 # ── CRS of site coordinates (CUSTOMIZE) ───────────────────────────────────────
 site_crs <- "EPSG:32612" # e.g. UTM Zone 12N (WGS84)
 
-# ── Output paths (CUSTOMIZE) ──────────────────────────────────────────────────
-# filenames only — files are always written to the output/ folder
+# ── Output filenames (CUSTOMIZE) ──────────────────────────────────────────────
 fit_output_csv <- "cany-climate-covariates.csv" # for model fitting
 forecast_output_csv <- "cany-climate-scenarios.csv" # for model forecasting
 
@@ -76,9 +75,9 @@ NPS_BOUNDARY_SHP <- "data/nps_boundaries/nps_boundary.shp"
 # (feel free to ignore these constants, they're set to match the processed data)
 CLIMATE_DATA_DIR    <- file.path("data", park_code, "processed")
 CLIMATE_FUTURES_CSV <- file.path("data", park_code, "climate-futures-models.csv")
-PRISM_PR_NC      <- file.path(CLIMATE_DATA_DIR, "prism_pr.nc")
-PRISM_TASMAX_NC  <- file.path(CLIMATE_DATA_DIR, "prism_tasmax.nc")
-PRISM_YEARS      <- 1950:2024
+LIVNEH_PR_NC      <- file.path(CLIMATE_DATA_DIR, "livneh", "livneh_pr.nc")
+LIVNEH_TASMAX_NC  <- file.path(CLIMATE_DATA_DIR, "livneh", "livneh_tasmax.nc")
+LIVNEH_YEARS      <- 1950:2018
 LOCA2_SCEN_YEARS <- list(historical = 1950:2014, ssp245 = 2015:2065, ssp585 = 2015:2065)
 ```
 
@@ -100,7 +99,7 @@ message("the historical year range is: ", hist_start, "–", hist_end)
 sites <- read.csv(site_locations_csv, stringsAsFactors = FALSE)
 
 # build a SpatVector of points in the site CRS, then reproject to WGS84
-# (this is bc PRISM and LOCA2 rasters are stored in EPSG:4326).
+# (this is bc Livneh and LOCA2 rasters are stored in EPSG:4326).
 sites_vect <- vect(
   sites,
   geom  = c(xcoord_col, ycoord_col),
@@ -129,15 +128,15 @@ ggplot() +
   theme_minimal()
 ```
 
-## Extract PRISM Climate at Site Locations
+## Extract Livneh Climate at Site Locations
 
 Now we can extract the climate covariate value at each site.
 
-```{r extract-prism}
-# Helper: extract one PRISM variable → long data frame (site_id, year, value)
-extract_prism_var <- function(subds_name, out_col, yr_mask, years) {
-  prism_nc <- if (subds_name == "pr") PRISM_PR_NC else PRISM_TASMAX_NC
-  r <- rast(prism_nc)[[yr_mask]]
+```{r extract-livneh}
+# Helper: extract one Livneh variable → long data frame (site_id, year, value)
+extract_livneh_var <- function(subds_name, out_col, yr_mask, years) {
+  livneh_nc <- if (subds_name == "pr") LIVNEH_PR_NC else LIVNEH_TASMAX_NC
+  r <- rast(livneh_nc)[[yr_mask]]
 
   # terra::extract returns a data frame: rows = points, cols = layers
   vals <- terra::extract(r, sites_vect)   # first col is ID (1-based row index)
@@ -158,13 +157,13 @@ extract_prism_var <- function(subds_name, out_col, yr_mask, years) {
   long
 }
 
-yr_mask <- PRISM_YEARS >= hist_start & PRISM_YEARS <= hist_end
-years   <- PRISM_YEARS[yr_mask]
+yr_mask <- LIVNEH_YEARS >= hist_start & LIVNEH_YEARS <= hist_end
+years   <- LIVNEH_YEARS[yr_mask]
 
 # collect requested variables
 covar_list <- list()
-if (extract_ppt)  covar_list[["ppt"]]  <- extract_prism_var("pr",     "ppt",  yr_mask, years)
-if (extract_tmax) covar_list[["tmax"]] <- extract_prism_var("tasmax", "tmax", yr_mask, years)
+if (extract_ppt)  covar_list[["ppt"]]  <- extract_livneh_var("pr",     "ppt",  yr_mask, years)
+if (extract_tmax) covar_list[["tmax"]] <- extract_livneh_var("tasmax", "tmax", yr_mask, years)
 
 # merge all variables on shared key columns
 key_cols <- c(site_id_col, year_col)
