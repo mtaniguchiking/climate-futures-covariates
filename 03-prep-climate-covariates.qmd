@@ -20,6 +20,7 @@ format: html
 
 **Notes**
 
+-   The historical climate data ends in 2018, so the response data must be limited to 1950–2018 (the notebook stops with an error otherwise)
 -   Outputs are saved to the `output/` folder using the filenames you define as `fit_output_csv` and `forecast_output_csv` in the `User Config` code block.
 
 ## User Config
@@ -56,6 +57,8 @@ extract_tmax <- TRUE # annual max temp (aka tmax, °C)
 
 # ── Future year range for forecast CSV (CUSTOMIZE) ────────────────────────────
 # must fall within LOCA2 projection range (2015–2065)
+# note: the historical data ends in 2018, so years between 2018 and future_start
+# are not covered by either output CSV
 future_start <- 2025
 future_end <- 2045
 ```
@@ -91,6 +94,13 @@ hist_start <- min(response[[year_col]], na.rm = TRUE)
 hist_end <- max(response[[year_col]], na.rm = TRUE)
 
 message("the historical year range is: ", hist_start, "–", hist_end)
+
+# the historical covariates (Livneh) only cover 1950-2018, and M4MD needs a
+# covariate value for every response year
+if (hist_start < min(LIVNEH_YEARS) || hist_end > max(LIVNEH_YEARS)) {
+  stop("Response data spans ", hist_start, "–", hist_end, ", but the historical climate data only covers ",
+       min(LIVNEH_YEARS), "–", max(LIVNEH_YEARS), ". Trim the response data to that range.")
+}
 ```
 
 ## Load Site Locations

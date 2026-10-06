@@ -77,6 +77,10 @@ Here we compute the mid-century mean anomaly in `tasmax` and `pr` relative to th
 ```{r compute-anomalies}
 #| message: false
 # pre-compute Livneh observed baselines
+if (baseline_start < min(LIVNEH_YEARS) || baseline_end > max(LIVNEH_YEARS)) {
+  stop("The baseline period must fall within the Livneh data range (",
+       min(LIVNEH_YEARS), "–", max(LIVNEH_YEARS), ").")
+}
 baseline_idx <- which(LIVNEH_YEARS >= baseline_start & LIVNEH_YEARS <= baseline_end)
 livneh_baseline <- list(
   tasmax = mean(extract_ts_mean(rast(LIVNEH_TASMAX_NC)[[baseline_idx]])),
