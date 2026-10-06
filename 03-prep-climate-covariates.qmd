@@ -29,8 +29,8 @@ format: html
 park_code <- "CANY"
 
 # ── Input paths (CUSTOMIZE) ───────────────────────────────────────────────────
-response_csv <- "~/Documents/FA26/M4MD/assets/_data/cany-ricegrass-cover.csv"
-site_locations_csv <- "~/Documents/FA26/M4MD/assets/_data/cany-plot-locs.csv"
+response_csv <- "M4MD/assets/_data/cany-ricegrass-cover.csv"
+site_locations_csv <- "M4MD/assets/_data/cany-plot-locs.csv"
 
 # ── Column names (CUSTOMIZE) ──────────────────────────────────────────────────
 # these should match the column names used in the response csv

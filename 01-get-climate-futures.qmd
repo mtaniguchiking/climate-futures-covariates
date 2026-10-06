@@ -3,7 +3,7 @@ title: "Climate Futures Model Selection"
 format: html
 ---
 
-*This Quarto doc takes processed Livneh + CMIP6 LOCA2 data (downloaded via `00-get-prism-loca2.qmd`). It classifies the CMIP6 model runs into climate futures (warm-wet, hot-dry, etc.) following the [Climate Futures for Planning](https://irma.nps.gov/DataStore/FileSource/Get?id=2302720&filename=2302720.html) framework. For a given park code, it produces a quadrant scatter plot and writes a CSV of the selected model members for later plotting.*
+*This Quarto doc takes processed Livneh + CMIP6 LOCA2 data (downloaded via `00-get-livneh-loca2.qmd`). It classifies the CMIP6 model runs into climate futures (warm-wet, hot-dry, etc.) following the [Climate Futures for Planning](https://irma.nps.gov/DataStore/FileSource/Get?id=2302720&filename=2302720.html) framework. For a given park code, it produces a quadrant scatter plot and writes a CSV of the selected model members for later plotting.*
 
 **User steps**
 

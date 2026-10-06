@@ -60,7 +60,7 @@ boundary_wgs84 <- nps_all[nps_all$UNIT_CODE == park_code, ] |>
   st_transform("EPSG:4326")
 park_name      <- unique(boundary_wgs84$UNIT_NAME)
 
-# Returns one spatial mean per layer (data is pre-masked in 00-get-prism-loca2).
+# Returns one spatial mean per layer (data is pre-masked in 00-get-livneh-loca2).
 extract_ts_mean <- function(r) {
   global(r, "mean", na.rm = TRUE)$mean
 }

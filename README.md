@@ -1,8 +1,8 @@
 # climate-futures-covariates
 
-This repo is a collection of four notebooks that combine observed and projected climate data for a given NPS park unit and package it into CSVs to be used in the [M4MD forecasting pipeline](https://lzachmann.github.io/models-for-missing-data/). The main outputs are a **historical covariate CSV** (site-level climate data for model fitting) and a **future scenarios CSV** (future climate scenario data for forecasting).
+This repo is a collection of four notebooks that combine historical and projected climate data for a given NPS park unit and package it into CSVs to be used in the [M4MD forecasting pipeline](https://lzachmann.github.io/models-for-missing-data/). The main outputs are a **historical covariate CSV** (site-level climate data for model fitting) and a **future scenarios CSV** (future climate scenario data for forecasting).
 
-These notebooks are intended as an early support tool for M4MD users who want to test the pipeline's developing forecast features. Depending on feedback, this can later be formalized into a more proper pipeline. Don't hesitate to share feedback/issues you come across 🙏
+These notebooks are intended as an early support tool for M4MD users who want to test the pipeline's developing forecast features. Depending on feedback, this can later be formalized into a more proper pipeline. Don't hesitate to share feedback/issues you come across them 🙏
 
 > Default configuration values are set for Canyonlands National Park (CANY), which serve as an example if you want something to reference.
 
@@ -29,20 +29,20 @@ The general approach for each notebook is:
 **You can find a short set of instructions at the beginning of each notebook for reference!**
 
 ```
-00-get-prism-loca2.qmd
-  └─> downloads + crops PRISM & LOCA2 data for your park
+00-get-livneh-loca2.qmd
+  └─> crops Livneh data & downloads + crops LOCA2 data for your park
         │
         ▼
 01-get-climate-futures.qmd
   └─> classifies LOCA2 model runs into climate futures (warm-wet, hot-dry, etc.)
         │
         ▼
-02-plot-prism-loca2.qmd   [optional]
+02-plot-livneh-loca2.qmd [optional]
   └─> plots time series and spatial summaries of the climate data
         │
         ▼
 03-prep-climate-covariates.qmd
-  └─> extracts climate values at your M4MD site locations
+  └─> extracts climate values at your M4MD site locations +
       writes the two CSVs used by the M4MD pipeline
 ```
 
@@ -63,28 +63,28 @@ The general approach for each notebook is:
 
 ## Notebook Reference
 
-### `00-get-prism-loca2.qmd`
+### `00-get-livneh-loca2.qmd`
 
-Downloads raw climate data, crops and masks everything to a specified park boundary, and writes NetCDF files used by the remaining notebooks.
+Crops the revised, historical Livneh data and downloads + crops the LOCA2 projections to a specified park boundary, and writes NetCDF files used by the remaining notebooks.
 
-- **PRISM** - 4 km annual observed data (ppt in mm/yr, tmax in °C), 1950–2024, downloaded via the `prism` R package
-- **LOCA2** - 6 km CMIP6 downscaled projections (ppt and tasmax), 1950–2065, pulled directly from the UCSD server. Covers 20 models × 2 scenarios (SSP2-4.5 and SSP5-8.5).
+- **Livneh** - 6 km historical data (ppt and tmax), 1950-2018. It's a revised version of the Livneh et al. observed data that has already been downloaded + processed by `build-livneh-regions.R` into one file per LOCA2 climate region This data can be found in `data/livneh/`.
+- **LOCA2** - 6 km CMIP6 downscaled projections (ppt and tasmax), 1950–2065. It is downloaded from a UCSD server. Covers 20 models × 2 scenarios (SSP2-4.5 and SSP5-8.5).
 
 **User config:** `park_code`, `keep_raw_downloads`
 
 **Outputs:**
-- `data/<park_code>/processed/prism_pr.nc`
-- `data/<park_code>/processed/prism_tasmax.nc`
+- `data/<park_code>/processed/livneh/livneh_pr.nc`
+- `data/<park_code>/processed/livneh/livneh_tasmax.nc`
 - `data/<park_code>/processed/loca2/<model>_<scenario>_pr.nc` (one per model/scenario)
 - `data/<park_code>/processed/loca2/<model>_<scenario>_tasmax.nc`
 
-> Note: this notebook downloads a fair amount of data and can take several minutes for a single park.
+> Note: this notebook downloads a fair amount of data and can take several minutes to complete.
 
 ---
 
 ### `01-get-climate-futures.qmd`
 
-Takes the processed NetCDFs and classifies each of the 40 model/scenario runs into a **climate future** quadrant (warm-wet, warm-dry, hot-dry, hot-wet, or central) based on mid-century temperature and precipitation anomalies relative to a PRISM observed baseline. Based on the [NPS CCRP Climate Futures framework](https://irma.nps.gov/DataStore/FileSource/Get?id=2302720&filename=2302720.html).
+Takes the processed NetCDFs and classifies each of the 40 model/scenario runs into a **climate future** quadrant (warm-wet, warm-dry, hot-dry, hot-wet, or central) based on mid-century temperature and precipitation anomalies relative to a Livneh observed baseline. Based on the [NPS CCRP Climate Futures framework](https://irma.nps.gov/DataStore/FileSource/Get?id=2302720&filename=2302720.html).
 
 You pick which futures you want to carry forward (e.g. "warm-wet" and "hot-dry"). Park-specific recommended futures can be found in the [NPS Climate Futures Summaries](https://www.nps.gov/subjects/climatechange/climatefutures.htm).
 
@@ -101,10 +101,10 @@ You pick which futures you want to carry forward (e.g. "warm-wet" and "hot-dry")
 
 ---
 
-### `02-plot-prism-loca2.qmd` *(optional)*
+### `02-plot-livneh-loca2.qmd` *(optional)*
 
 Some quick exploratory plots. Produces:
-- Time-series plots of ppt and tmax for PRISM (historical) and LOCA2 (projected)
+- Time-series plots of ppt and tmax for Livneh (historical) and LOCA2 (projected)
 - Spatial mean maps per selected climate future
 
 **User config:** `park_code`, `hist_start/end`, `future_start/end`
@@ -149,6 +149,8 @@ The main output-generating notebook. Takes the processed climate data and your M
 
 The two output CSVs from notebook `03` (found in the `output` folder) are formatted be to inputs for the M4MD pipeline. As a reminder, the idea here is to take an existing M4MD model that includes a prepared response variable CSV, site locations CSV, etc and provide a covariates CSV for model fitting and future covariates CSV for model forecasting.
 
+Below are a few suggestions. More documentation can be found in this forecasting [developer's guide](https://mtaniguchiking.github.io/M4MD-forecast-docs-dev/docs/5-forecasting/).
+
 - **`fit_output_csv`** - use this as the covariate input when fitting your M4MD model. I recommend copying/moving this file into your M4MD repo `assets/_data/`. Then, the covariate sections of your config YAML could look something like (customize the `\<blanks\>`):
 
 ```
@@ -187,16 +189,21 @@ covariates:
 
 ## Data & Limitations
 
-### Data sources
+### Sources
 
-- **PRISM** - [PRISM Group](https://prism.oregonstate.edu/), Oregon State University, accessed March 2026. Annual 4 km gridded climate data, 1950–2024.
-- **LOCA2** - [Pierce et al., UCSD](https://loca.ucsd.edu/loca-version-2-for-north-america-ca-jan-2023/). CMIP6 statistically downscaled to ~6 km. Historical: 1950–2014; projections: 2015–2065 under SSP2-4.5 and SSP5-8.5.
-- **NPS boundaries** - [National Parks boundaries](https://geodata.bts.gov/datasets/national-parks/explore) via the Bureau of Transportation Statistics.
+- **Historical data** - This project uses the Extreme-Preserving Long-Term Gridded Daily Precipitation Dataset for the Conterminous United States developed by Pierce et al. (2021).
+  - Pierce, D. W., Su, L., Cayan, D. R., Risser, M. D., Livneh, B., & Lettenmaier, D. P. (2021). An extreme-preserving long-term gridded daily precipitation data set for the conterminous United States. Journal of Hydrometeorology, 22, 1883–1898. https://doi.org/10.1175/JHM-D-20-0212.1
+  - Data was accessed via https://cirrus.ucsd.edu/~pierce/nonsplit_precip/. See `build-livneh-regions.R`.
+- **Future projection data** - This project uses the LOCA version 2 at 6 km for the North American domain dataset developed by Pierce et al. (2023).
+  - Pierce, D. W., D. R. Cayan, D. R. Feldman, and M. D. Risser, 2023: Future Increases in North American Extreme Precipitation in CMIP6 downscaled with LOCA. J. Hydrometeor., https://doi.org/10.1175/JHM-D-22-0194.1, in press.
+  - Data was accessed via https://cirrus.ucsd.edu/~pierce/LOCA2/. See `00-get-livneh-loca2.qmd`.
+- **NPS boundaries** - This project uses the National Parks boundaries dataset from Bureau of Transportation Statistics. It was downloaded via https://geodata.bts.gov/datasets/national-parks/explore.
+- **CCRP Climate Futures** - This project follows the climate futures methodology as described in Methods for assessing climate change exposure for national park planning by Runyon et al. (2024).
+  - Runyon, A. N., J. E. Gross, G. W. Schuurman, D. J. Lawrence, and J. H. Reynolds. 2024. Methods for assessing climate change exposure for national park planning. Park Resource Report PRR—2024/02. National Park Service, Fort Collins, Colorado. https://doi.org/10.36967/2302720
 
 ### Limitations / Notes on the data we're using
 
-- **Park bounday data** - The NPS boundary shapefile is already included in this repo at nps_boundaries.
-- **PRISM <> LOCA2** - LOCA2 bias correction is not performed using PRISM. This means there may be some small inconsistencies between the historical and future projection data. However, in the context of simply testing forecasting features, PRISM was selected for its accurancy and easy of use.
-- **Limited covariates for fitting + forecasting** - Covariates should be consistent between model fitting and model forecasting. Thus, for the purposes of testing the forecasting features, you should fit your model with only temp and/or precip (configurable in 03) and then forecast with these same covariate(s).
-- **PRISM rate limiting** - the PRISM download server will throttle requests (usually 2 downloads are allowed each day). If you hit the rate limit, you will have to wait 24 hours before re-running notebook `00`.
+- **Limited covariates for fitting + forecasting** - Covariates should be consistent between model fitting and model forecasting. Thus, for the purposes of testing the forecasting features, you should fit your model with only temp and/or precip (configurable in 03) and then forecast with these same covariate(s). This small menu of covariates constrains an M4MD model to explain response variable variation only in terms of precipitation, maximum temperature, and/or time.
+- **Fixed sources of data** - In addition to the covariates used, there are limitations with using a single source of data across varying landscapes. For example, there may be more accurate precipitation datasets, finer-resolution datasets, etc depending on your specific region.
 - **One ensemble member per model** - only one ensemble member is used per CMIP6 model (see the `LOCA2_ENSEMBLES` list in notebook `00` for the specific members). This keeps the download manageable but means within-model variability isn't captured.
+- **Editing this notebook** - if you feel comfortable doing so, you are encouraged to add to this repo for your specific region. This could mean replacing a dataset, adding more covariates, visualizing additional plots, etc!
